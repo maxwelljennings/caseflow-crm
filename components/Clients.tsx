@@ -52,7 +52,7 @@ const Clients: React.FC<ClientsProps> = ({ navigate_to_client }) => {
   const filtered_clients = useMemo(() => {
     return clients.filter(client => {
         const search_match = client.name.toLowerCase().includes(search_term.toLowerCase()) ||
-            client.case_number.toLowerCase().includes(search_term.toLowerCase());
+            (client.immigration_case.case_number || '').toLowerCase().includes(search_term.toLowerCase());
         
         const assignee_match = filters.assignees.length === 0 || 
             client.assignee_ids.some(assignee_id => filters.assignees.includes(assignee_id));
@@ -72,7 +72,7 @@ const Clients: React.FC<ClientsProps> = ({ navigate_to_client }) => {
                 result = a.name.localeCompare(b.name);
                 break;
             case 'case_number':
-                result = a.case_number.localeCompare(b.case_number);
+                result = (a.immigration_case.case_number || '').localeCompare(b.immigration_case.case_number || '');
                 break;
             case 'assignee':
                 const first_assignee_a = users.find(u => u.id === a.assignee_ids[0])?.name || '';
@@ -214,7 +214,7 @@ const Clients: React.FC<ClientsProps> = ({ navigate_to_client }) => {
                   className="bg-slate-800 border-b border-slate-700 hover:bg-slate-700 cursor-pointer"
                 >
                   <td className="px-6 py-4 font-medium text-slate-100 whitespace-nowrap">{client.name}</td>
-                  <td className="px-6 py-4">{client.case_number}</td>
+                  <td className="px-6 py-4">{client.immigration_case.case_number}</td>
                   <td className="px-6 py-4">
                     <div className="flex items-center -space-x-2">
                         {assignees.slice(0, 3).map(assignee => (

@@ -28,7 +28,7 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ isOpen, onClose, clie
             // Fix: Initialize state from the nested client object structure.
             set_client_data({
                 name: client.name,
-                case_number: client.case_number,
+                case_number: client.immigration_case.case_number || '',
                 email: client.contact.email || '',
                 phone: client.contact.phone || '',
                 nationality: client.details.nationality || '',
@@ -52,7 +52,6 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ isOpen, onClose, clie
         const updated_client: Client = {
             ...client,
             name: client_data.name,
-            case_number: client_data.case_number,
             contact: {
                 ...client.contact,
                 email: client_data.email,
@@ -66,6 +65,7 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ isOpen, onClose, clie
             immigration_case: {
                 ...client.immigration_case,
                 office_id: client_data.office_id,
+                case_number: client_data.case_number,
             }
         };
 
@@ -100,7 +100,7 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ isOpen, onClose, clie
                         </div>
                         <div>
                             <label htmlFor="case_number" className="block text-sm font-medium text-slate-300">Case Number</label>
-                            <input type="text" name="case_number" id="case_number" value={client_data.case_number} onChange={handle_change} required className={input_styles} />
+                            <input type="text" name="case_number" id="case_number" value={client_data.case_number} onChange={handle_change} className={input_styles} />
                         </div>
                         <div>
                             <label htmlFor="email" className="block text-sm font-medium text-slate-300">Email Address</label>

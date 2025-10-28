@@ -326,7 +326,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client_id, set_view }) =>
             <div className="flex justify-between items-start">
                 <div>
                     <h1 className="text-3xl font-bold text-slate-100">{client.name}</h1>
-                    <p className="text-slate-400">{client.case_number}</p>
+                    <p className="text-slate-400">{client.immigration_case.case_number || 'No Case Number'}</p>
                 </div>
                 <button
                     onClick={() => set_is_edit_modal_open(true)}

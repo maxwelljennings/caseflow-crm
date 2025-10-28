@@ -110,7 +110,6 @@ export const CLIENTS: Client[] = [
     {
         id: 'client-1',
         name: 'Kateryna Ivanova',
-        case_number: 'WAW-2024-1034',
 // Fix: Changed property 'assignee_id' to 'assignee_ids' and wrapped the value in an array to match the Client type.
         assignee_ids: ['user-1'],
         last_activity_date: '2024-07-20',
@@ -131,7 +130,6 @@ export const CLIENTS: Client[] = [
     {
         id: 'client-2',
         name: 'Oleksandr Petrenko',
-        case_number: 'KRK-2024-0512',
 // Fix: Changed property 'assignee_id' to 'assignee_ids' and wrapped the value in an array to match the Client type.
         assignee_ids: ['user-1'],
         last_activity_date: '2024-07-18',
@@ -150,7 +148,6 @@ export const CLIENTS: Client[] = [
     {
         id: 'client-3',
         name: 'Yulia Shevchenko',
-        case_number: 'WAW-2023-8876',
 // Fix: Changed property 'assignee_id' to 'assignee_ids' and wrapped the value in an array to match the Client type.
         assignee_ids: ['user-2'],
         last_activity_date: '2024-06-15',
@@ -169,7 +166,6 @@ export const CLIENTS: Client[] = [
     {
         id: 'client-4',
         name: 'Aditi Sharma',
-        case_number: 'GDN-2024-2109',
 // Fix: Changed property 'assignee_id' to 'assignee_ids' and wrapped the value in an array to match the Client type.
         assignee_ids: ['user-2'],
         last_activity_date: '2024-07-21',

@@ -40,8 +40,8 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose }) => {
 
     const handle_submit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!new_client.first_name || !new_client.last_name || !new_client.case_number) {
-            alert('First Name, Last Name, and Case Number are required.');
+        if (!new_client.first_name || !new_client.last_name) {
+            alert('First Name and Last Name are required.');
             return;
         }
         // Add validation for office_id
@@ -52,11 +52,11 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose }) => {
 
         const client_to_add: Omit<Client, 'id'> = {
             name: `${new_client.first_name} ${new_client.last_name}`.trim(),
-            case_number: new_client.case_number,
             assignee_ids: [current_user.id],
             last_activity_date: new Date().toISOString().split('T')[0],
             immigration_case: {
                 office_id: new_client.office_id,
+                case_number: new_client.case_number,
             },
             contact: {
                 phone: new_client.phone,
@@ -97,7 +97,7 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose }) => {
                         </div>
                         <div>
                             <label htmlFor="case_number" className="block text-sm font-medium text-slate-300">Case Number</label>
-                            <input type="text" name="case_number" id="case_number" value={new_client.case_number} onChange={handle_change} required className={input_styles} />
+                            <input type="text" name="case_number" id="case_number" value={new_client.case_number} onChange={handle_change} className={input_styles} />
                         </div>
                         <div>
                             <label htmlFor="email" className="block text-sm font-medium text-slate-300">Email Address</label>

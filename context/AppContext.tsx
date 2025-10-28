@@ -1,5 +1,6 @@
 
 
+
 import React, { createContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import type { Client, User, Task, File as ClientFile, ActionLogEntry, Payment, PaymentPlan, ImmigrationOffice, Notification, Session } from '../types';
@@ -66,7 +67,6 @@ const transform_flat_to_nested = (client: any): Client => {
     return {
         id: client.id,
         name: client.name,
-        case_number: client.case_number,
         assignee_ids: client.assignee_ids || [],
         last_activity_date: client.last_activity_date,
         payment_plan: client.payment_plan,
@@ -82,7 +82,7 @@ const transform_flat_to_nested = (client: any): Client => {
         },
         immigration_case: {
             office_id: client.office_id,
-            case_number: client.immigration_case_number,
+            case_number: client.case_number,
             case_password: client.immigration_case_password,
             is_transferring: client.is_transferring,
             transfer_office_id: client.transfer_office_id,
@@ -98,7 +98,7 @@ const transform_nested_to_flat = (client: Partial<Client>) => {
         nationality: client.details?.nationality,
         passport_number: client.details?.passport_number,
         office_id: client.immigration_case?.office_id,
-        immigration_case_number: client.immigration_case?.case_number,
+        case_number: client.immigration_case?.case_number,
         immigration_case_password: client.immigration_case?.case_password,
         is_transferring: client.immigration_case?.is_transferring,
         transfer_office_id: client.immigration_case?.transfer_office_id,
@@ -480,131 +480,95 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
             alert("File name cannot be empty.");
             return;
         }
-        if (file_to_update.name === new_name) return;
-
-        const old_path = file_to_update.storage_path;
-        if (!old_path) {
-            alert("Cannot rename file: storage path is missing. This might be an old file record.");
+        if (file_to_update.name === new_name.trim()) {
             return;
         }
-        
-        try {
-            const path_parts = old_path.split('/');
-            const old_filename_with_uuid = path_parts.pop();
-            const folder_path = path_parts.join('/');
 
-            if (!old_filename_with_uuid) {
-                 throw new Error("Could not determine filename from storage path.");
-            }
+        const { data, error } = await supabase
+            .from('files')
+            .update({ name: new_name.trim() })
+            .eq('id', file_id)
+            .select()
+            .single();
 
-            const uuid_separator_index = old_filename_with_uuid.indexOf('-');
-            if (uuid_separator_index === -1) {
-                throw new Error("Cannot rename file: could not find UUID prefix in storage path.");
-            }
-
-            const uuid = old_filename_with_uuid.substring(0, uuid_separator_index);
-            const new_filename_with_uuid = `${uuid}-${new_name}`;
-            const new_path = folder_path ? `${folder_path}/${new_filename_with_uuid}` : new_filename_with_uuid;
-
-            // 1. Move file in Supabase Storage
-            const { error: move_error } = await supabase.storage
-                .from('client-files')
-                .move(old_path, new_path);
-            if (move_error) throw move_error;
-
-            // 2. Get new public URL
-            const { data: url_data } = supabase.storage
-                .from('client-files')
-                .getPublicUrl(new_path);
-            
-            // 3. Update database record
-            const updates = {
-                name: new_name,
-                storage_path: new_path,
-                url: url_data.publicUrl,
-            };
-            const { data, error: db_error } = await supabase.from('files')
-                .update(updates)
-                .eq('id', file_id)
-                .select()
-                .single();
-
-            if (db_error) {
-                console.error("DB update failed after storage move. Attempting to revert...");
-                // Attempt to move the file back if the DB update fails
-                await supabase.storage.from('client-files').move(new_path, old_path);
-                throw db_error;
-            }
-            
-            // 4. Update local state
-            set_files(prev => prev.map(f => f.id === data.id ? data as ClientFile : f));
-        } catch (error: any) {
-            console.error("Error renaming file:", error);
+        if (error) {
+            console.error("Error updating file name:", error);
             alert(`Failed to rename file: ${error.message}`);
+        } else if (data) {
+            set_files(prev => prev.map(f => (f.id === file_id ? data as ClientFile : f)));
         }
     };
-    
+
     const delete_file = async (file_id: string) => {
         const file_to_delete = files.find(f => f.id === file_id);
-        if (!file_to_delete) return alert("File not found.");
-
+        if (!file_to_delete) {
+            alert('File not found to delete.');
+            return;
+        }
+    
         try {
-            let file_path = file_to_delete.storage_path;
-            const bucket_name = 'client-files';
-
-            // Robust fallback for old files without storage_path
-            if (!file_path) {
-                console.warn(`File '${file_to_delete.name}' is missing a storage_path. Falling back to robust URL parsing.`);
-                 try {
-                    const url = new URL(file_to_delete.url);
-                    // Example pathname: /storage/v1/object/public/client-files/client-id/file.pdf
-                    const path_parts = url.pathname.split(`/${bucket_name}/`);
-                    if (path_parts.length > 1 && path_parts[1]) {
-                        file_path = decodeURIComponent(path_parts[1]);
-                        console.log(`Fallback parsed path: ${file_path}`);
-                    } else {
-                         throw new Error(`Could not find bucket '${bucket_name}' in the URL path.`);
-                    }
-                } catch (e) {
-                    throw new Error(`Could not parse file path from invalid URL for old file: "${file_to_delete.url}"`);
+            // 1. Delete from storage
+            if (file_to_delete.storage_path) {
+                const { error: storage_error } = await supabase.storage
+                    .from('client-files')
+                    .remove([file_to_delete.storage_path]);
+                
+                if (storage_error) {
+                    console.error("Error deleting from storage:", storage_error.message);
                 }
             }
-            
-            console.log(`Attempting to delete from storage with path: ${file_path}`);
-            const { error: storage_error } = await supabase.storage.from(bucket_name).remove([file_path]);
-            if (storage_error) {
-                // Log the detailed error but show a user-friendly message
-                console.error("Supabase storage error:", storage_error);
-                throw new Error(`Failed to delete file from storage. Check browser console for details. This is likely a permissions issue in Supabase.`);
-            }
-
-            console.log(`Successfully deleted from storage. Now deleting from database with id: ${file_id}`);
-            const { error: db_error } = await supabase.from('files').delete().eq('id', file_id);
+    
+            // 2. Delete from database
+            const { error: db_error } = await supabase
+                .from('files')
+                .delete()
+                .eq('id', file_id);
+    
             if (db_error) {
-                console.error("Supabase DB error:", db_error);
-                throw new Error(`File deleted from storage, but failed to delete database record. Check browser console for details.`);
+                throw db_error;
             }
-
-            console.log("Successfully deleted file record from database.");
+    
+            // 3. Update local state
             set_files(prev => prev.filter(f => f.id !== file_id));
+    
         } catch (error: any) {
-            console.error("Full error in delete_file:", error);
+            console.error('Error deleting file:', error);
             alert(`Failed to delete file: ${error.message}`);
         }
     };
-    
+
     const mark_notification_read = async (notification_id: string) => {
-        const { error } = await supabase.from('notifications').update({ is_read: true }).eq('id', notification_id);
-        if (error) console.error("Error marking notification as read:", error);
-        else set_notifications(prev => prev.map(n => n.id === notification_id ? { ...n, is_read: true } : n));
+        const { data, error } = await supabase
+            .from('notifications')
+            .update({ is_read: true })
+            .eq('id', notification_id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error("Error marking notification read:", error);
+        } else if (data) {
+            set_notifications(prev => prev.map(n => n.id === notification_id ? data : n));
+        }
     };
 
     const mark_all_notifications_read = async () => {
+        if (!current_user) return;
         const unread_ids = notifications.filter(n => !n.is_read).map(n => n.id);
         if (unread_ids.length === 0) return;
-        const { error } = await supabase.from('notifications').update({ is_read: true }).in('id', unread_ids);
-        if (error) console.error("Error marking all notifications as read:", error);
-        else set_notifications(prev => prev.map(n => ({ ...n, is_read: true })));
+
+        const { data, error } = await supabase
+            .from('notifications')
+            .update({ is_read: true })
+            .in('id', unread_ids)
+            .select();
+
+        if (error) {
+            console.error("Error marking all notifications read:", error);
+        } else if (data) {
+            const updated_ids = new Set(data.map(d => d.id));
+            set_notifications(prev => prev.map(n => updated_ids.has(n.id) ? { ...n, is_read: true } : n));
+        }
     };
 
     const sign_out = async () => {
@@ -612,56 +576,45 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
     };
 
     const update_user_avatar = async (file: File) => {
-        if (!current_user) {
-            alert("You must be logged in to update your avatar.");
-            return;
-        }
-        
+        if (!current_user) return;
+
+        const file_ext = file.name.split('.').pop();
+        const file_path = `${current_user.id}/avatar.${file_ext}`;
+
         try {
-            const file_ext = file.name.split('.').pop();
-            const file_path = `${current_user.id}/${new Date().getTime()}.${file_ext}`;
-
-            // Check if an old avatar exists and remove it
-            const { data: file_list, error: list_error } = await supabase.storage.from('avatars').list(current_user.id);
-            if (list_error) { console.warn("Could not list old avatars, proceeding anyway.", list_error); }
-            if (file_list && file_list.length > 0) {
-                const files_to_remove = file_list.map(f => `${current_user.id}/${f.name}`);
-                await supabase.storage.from('avatars').remove(files_to_remove);
-            }
-
             const { error: upload_error } = await supabase.storage
                 .from('avatars')
-                .upload(file_path, file);
+                .upload(file_path, file, { upsert: true });
 
             if (upload_error) throw upload_error;
 
             const { data: url_data } = supabase.storage
                 .from('avatars')
                 .getPublicUrl(file_path);
+            
+            // Bust cache by adding a timestamp
+            const public_url = `${url_data.publicUrl}?t=${new Date().getTime()}`;
 
-            const new_avatar_url = url_data.publicUrl;
-
-            const { data, error: update_error } = await supabase
+            const { data: updated_user, error: update_error } = await supabase
                 .from('profiles')
-                .update({ avatar_url: new_avatar_url })
+                .update({ avatar_url: public_url })
                 .eq('id', current_user.id)
                 .select()
                 .single();
-            
+
             if (update_error) throw update_error;
 
-            set_current_user(data as User);
-            set_users(prev => prev.map(u => u.id === data.id ? data as User : u));
-            
+            set_current_user(updated_user);
+            set_users(prev => prev.map(u => u.id === updated_user.id ? updated_user : u));
+
         } catch (error: any) {
             console.error("Error updating avatar:", error);
             alert(`Failed to update avatar: ${error.message}`);
         }
     };
-
-
-    const value: AppContextType = {
-        state: { clients, users, tasks, immigration_offices, notifications, current_user, session, loading, files, action_logs, payments },
+    
+    const context_value = useMemo(() => ({
+        state: { clients, users, tasks, immigration_offices, notifications, loading, current_user, session, files, action_logs, payments },
         add_client,
         update_client,
         delete_client,
@@ -679,11 +632,11 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
         mark_all_notifications_read,
         sign_out,
         update_user_avatar,
-    };
+    }), [clients, users, tasks, immigration_offices, notifications, loading, current_user, session, files, action_logs, payments]);
 
     return (
-        <AppContext.Provider value={value}>
-            {loading && !clients.length && session ? <div className="flex h-screen w-full items-center justify-center text-lg bg-slate-900 text-slate-300">Loading CaseFlow...</div> : children}
+        <AppContext.Provider value={context_value}>
+            {children}
         </AppContext.Provider>
     );
 };

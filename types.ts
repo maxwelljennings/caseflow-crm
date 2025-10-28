@@ -130,7 +130,6 @@ export interface Details {
 export interface Client {
     id: string;
     name: string;
-    case_number: string;
     assignee_ids: string[];
     last_activity_date: string; // YYYY-MM-DD
     case_description?: string; // Add this line for the new feature

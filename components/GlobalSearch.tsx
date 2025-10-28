@@ -46,7 +46,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ navigate_to_client, set_vie
             const phone = client.contact.phone?.replace(/\D/g, '') || '';
             const search_term_phone = lowercased_term.replace(/\D/g, '');
             return client.name.toLowerCase().includes(lowercased_term) ||
-                   client.case_number.toLowerCase().includes(lowercased_term) ||
+                   (client.immigration_case.case_number || '').toLowerCase().includes(lowercased_term) ||
                    (search_term_phone && phone.includes(search_term_phone));
         });
 
@@ -140,7 +140,7 @@ const GlobalSearch: React.FC<GlobalSearchProps> = ({ navigate_to_client, set_vie
                                                 <Icon name="clients" className="w-4 h-4 mr-3 text-slate-400" />
                                                 <div>
                                                     <p className="text-sm font-medium text-slate-100">{client.name}</p>
-                                                    <p className="text-xs text-slate-400">{client.case_number}</p>
+                                                    <p className="text-xs text-slate-400">{client.immigration_case.case_number}</p>
                                                 </div>
                                             </li>
                                         ))}

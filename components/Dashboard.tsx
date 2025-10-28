@@ -274,7 +274,7 @@ const Dashboard: React.FC<DashboardProps> = ({ set_view, navigate_to_client }) =
                         <div key={client.id} onClick={() => navigate_to_client(client.id)} className="flex justify-between items-center py-3 cursor-pointer hover:bg-slate-700/50 -mx-3 px-3 rounded-md">
                             <div>
                                 <p className="font-medium text-slate-100">{client.name}</p>
-                                <p className="text-sm text-slate-400">{client.case_number}</p>
+                                <p className="text-sm text-slate-400">{client.immigration_case.case_number}</p>
                             </div>
                             <div className="text-right">
                                 <p className="text-sm text-slate-400">Last activity: {client.last_activity_date}</p>
