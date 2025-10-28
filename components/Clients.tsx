@@ -16,6 +16,7 @@ const Clients: React.FC<ClientsProps> = ({ navigate_to_client }) => {
   const [is_filter_panel_open, set_is_filter_panel_open] = useState(false);
   const [filters, set_filters] = useState<{ assignees: string[], offices: string[] }>({ assignees: [], offices: [] });
   const filter_ref = useRef<HTMLDivElement>(null);
+  const [assignee_search, set_assignee_search] = useState('');
   
   type Sort_Key = 'name' | 'case_number' | 'assignee' | 'last_activity_date';
   const [sort_key, set_sort_key] = useState<Sort_Key>('last_activity_date');
@@ -43,6 +44,7 @@ const Clients: React.FC<ClientsProps> = ({ navigate_to_client }) => {
 
   const clear_filters = () => {
     set_filters({ assignees: [], offices: [] });
+    set_assignee_search('');
   };
   
   const active_filter_count = filters.assignees.length + filters.offices.length;
@@ -152,8 +154,20 @@ const Clients: React.FC<ClientsProps> = ({ navigate_to_client }) => {
                     
                     <div>
                         <h5 className="text-sm font-semibold text-slate-300 mb-2">Assignee</h5>
+                        <div className="relative mb-2">
+                            <Icon name="search" className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                            <input
+                                type="text"
+                                placeholder="Search assignee..."
+                                value={assignee_search}
+                                onChange={(e) => set_assignee_search(e.target.value)}
+                                className="w-full pl-8 pr-2 py-1 text-sm bg-slate-600 text-slate-100 border border-slate-500 rounded-md placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                        </div>
                         <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
-                            {users.map(user => (
+                            {users
+                                .filter(user => user.name.toLowerCase().includes(assignee_search.toLowerCase()))
+                                .map(user => (
                                 <div key={user.id} className="flex items-center">
                                     <input type="checkbox" id={`assignee-${user.id}`} checked={filters.assignees.includes(user.id)} onChange={() => handle_filter_change('assignees', user.id)} className="h-4 w-4 rounded bg-slate-600 border-slate-500 text-blue-600 focus:ring-blue-500"/>
                                     <label htmlFor={`assignee-${user.id}`} className="ml-2 text-sm text-slate-200">{user.name}</label>

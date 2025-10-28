@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { use_app_context } from '../hooks/useAppContext';
 import type { Client } from '../types';
 import Icon from './common/Icon';
+import { useCountryOptions } from '../hooks/useCountryOptions';
 
 interface EditClientModalProps {
     isOpen: boolean;
@@ -11,6 +12,7 @@ interface EditClientModalProps {
 
 const EditClientModal: React.FC<EditClientModalProps> = ({ isOpen, onClose, client }) => {
     const { update_client, delete_client, state: { users, immigration_offices } } = use_app_context();
+    const sorted_countries = useCountryOptions();
     const [client_data, set_client_data] = useState({
         name: '',
         case_number: '',
@@ -110,7 +112,10 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ isOpen, onClose, clie
                         </div>
                         <div>
                             <label htmlFor="nationality" className="block text-sm font-medium text-slate-300">Nationality</label>
-                            <input type="text" name="nationality" id="nationality" value={client_data.nationality} onChange={handle_change} className={input_styles} />
+                            <select name="nationality" id="nationality" value={client_data.nationality} onChange={handle_change} className={input_styles}>
+                                <option value="">Select a country</option>
+                                {sorted_countries.map(country => <option key={country} value={country}>{country}</option>)}
+                            </select>
                         </div>
                          <div>
                             <label htmlFor="passport_number" className="block text-sm font-medium text-slate-300">Passport Number</label>

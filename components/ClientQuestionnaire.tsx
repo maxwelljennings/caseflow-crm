@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import type { Client, Questionnaire, TravelEntry, FamilyMember } from '../types';
 import { use_app_context } from '../hooks/useAppContext';
 import Icon from './common/Icon';
+import { useCountryOptions } from '../hooks/useCountryOptions';
 
 interface ClientQuestionnaireProps {
     client: Client;
@@ -53,6 +54,7 @@ const EditField: React.FC<React.InputHTMLAttributes<HTMLInputElement | HTMLSelec
 
 const ClientQuestionnaire: React.FC<ClientQuestionnaireProps> = ({ client }) => {
     const { update_client } = use_app_context();
+    const sorted_countries = useCountryOptions();
     const [is_editing, set_is_editing] = useState(false);
 
     const get_initial_state = useMemo(() => {
@@ -180,8 +182,14 @@ const ClientQuestionnaire: React.FC<ClientQuestionnaireProps> = ({ client }) => 
                             <EditField label="Mother's maiden name" name="mothers_maiden_name" value={form_data.personal_data?.mothers_maiden_name || ''} onChange={(e) => handle_form_change('personal_data', 'mothers_maiden_name', e.target.value)} />
                             <EditField label="Date of birth" type="date" name="date_of_birth" value={form_data.personal_data?.date_of_birth || ''} onChange={(e) => handle_form_change('personal_data', 'date_of_birth', e.target.value)} />
                             <EditField label="Place of birth" name="place_of_birth" value={form_data.personal_data?.place_of_birth || ''} onChange={(e) => handle_form_change('personal_data', 'place_of_birth', e.target.value)} />
-                            <EditField label="Country of birth" name="country_of_birth" value={form_data.personal_data?.country_of_birth || ''} onChange={(e) => handle_form_change('personal_data', 'country_of_birth', e.target.value)} />
-                            <EditField label="Nationality" name="nationality" value={form_data.personal_data?.nationality || ''} onChange={(e) => handle_form_change('personal_data', 'nationality', e.target.value)} />
+                            <EditField label="Country of birth" type="select" name="country_of_birth" value={form_data.personal_data?.country_of_birth || ''} onChange={(e) => handle_form_change('personal_data', 'country_of_birth', e.target.value)}>
+                                <option value="">Select a country</option>
+                                {sorted_countries.map(country => <option key={country} value={country}>{country}</option>)}
+                            </EditField>
+                            <EditField label="Nationality" type="select" name="nationality" value={form_data.personal_data?.nationality || ''} onChange={(e) => handle_form_change('personal_data', 'nationality', e.target.value)}>
+                                <option value="">Select a country</option>
+                                {sorted_countries.map(country => <option key={country} value={country}>{country}</option>)}
+                            </EditField>
                             <EditField label="Citizenship" name="citizenship" value={form_data.personal_data?.citizenship || ''} onChange={(e) => handle_form_change('personal_data', 'citizenship', e.target.value)} />
                             <EditField label="Marital Status" type="select" name="marital_status" value={form_data.personal_data?.marital_status || ''} onChange={(e) => handle_form_change('personal_data', 'marital_status', e.target.value)}>
                                 <option value="">Select...</option><option>Single</option><option>Married</option><option>Divorced</option><option>Widowed</option>

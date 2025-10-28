@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { use_app_context } from '../hooks/useAppContext';
 import type { Client } from '../types';
 import Icon from './common/Icon';
+import { useCountryOptions } from '../hooks/useCountryOptions';
 
 interface AddClientModalProps {
     isOpen: boolean;
@@ -10,8 +11,10 @@ interface AddClientModalProps {
 
 const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose }) => {
     const { add_client, state: { users, current_user, immigration_offices } } = use_app_context();
+    const sorted_countries = useCountryOptions();
     const [new_client, set_new_client] = useState({
-        name: '',
+        first_name: '',
+        last_name: '',
         case_number: '',
         email: '',
         phone: '',
@@ -37,8 +40,8 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose }) => {
 
     const handle_submit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!new_client.name || !new_client.case_number) {
-            alert('Client Name and Case Number are required.');
+        if (!new_client.first_name || !new_client.last_name || !new_client.case_number) {
+            alert('First Name, Last Name, and Case Number are required.');
             return;
         }
         // Add validation for office_id
@@ -48,7 +51,7 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose }) => {
         }
 
         const client_to_add: Omit<Client, 'id'> = {
-            name: new_client.name,
+            name: `${new_client.first_name} ${new_client.last_name}`.trim(),
             case_number: new_client.case_number,
             assignee_ids: [current_user.id],
             last_activity_date: new Date().toISOString().split('T')[0],
@@ -85,8 +88,12 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose }) => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Column 1 */}
                         <div>
-                            <label htmlFor="name" className="block text-sm font-medium text-slate-300">Full Name</label>
-                            <input type="text" name="name" id="name" value={new_client.name} onChange={handle_change} required className={input_styles} />
+                            <label htmlFor="first_name" className="block text-sm font-medium text-slate-300">First Name</label>
+                            <input type="text" name="first_name" id="first_name" value={new_client.first_name} onChange={handle_change} required className={input_styles} />
+                        </div>
+                        <div>
+                            <label htmlFor="last_name" className="block text-sm font-medium text-slate-300">Last Name</label>
+                            <input type="text" name="last_name" id="last_name" value={new_client.last_name} onChange={handle_change} required className={input_styles} />
                         </div>
                         <div>
                             <label htmlFor="case_number" className="block text-sm font-medium text-slate-300">Case Number</label>
@@ -104,7 +111,10 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose }) => {
                         {/* Column 2 */}
                         <div>
                             <label htmlFor="nationality" className="block text-sm font-medium text-slate-300">Nationality</label>
-                            <input type="text" name="nationality" id="nationality" value={new_client.nationality} onChange={handle_change} className={input_styles} />
+                            <select name="nationality" id="nationality" value={new_client.nationality} onChange={handle_change} className={input_styles}>
+                                <option value="">Select a country</option>
+                                {sorted_countries.map(country => <option key={country} value={country}>{country}</option>)}
+                            </select>
                         </div>
                          <div>
                             <label htmlFor="passport_number" className="block text-sm font-medium text-slate-300">Passport Number</label>
