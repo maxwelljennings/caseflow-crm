@@ -9,6 +9,12 @@ import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import saveAs from 'file-saver';
 
+interface DocumentGeneratorProps {
+    client_prop?: Client;
+    is_embedded?: boolean;
+}
+
+
 // --- Helper Functions ---
 
 function getValueByPath(obj: any, path: string): any {
@@ -74,15 +80,15 @@ const TagTable: React.FC<{tags: {tag: string, desc: string}[]}> = ({tags}) => (
 );
 
 
-const DocumentGenerator: React.FC = () => {
-    const { state, delete_document_template, increment_template_usage_count, update_client, upload_generated_document, add_action_log } = use_app_context();
+const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({ client_prop, is_embedded = false }) => {
+    const { state, delete_document_template, increment_template_usage_count, update_client, add_action_log } = use_app_context();
     const { document_templates, clients, users, immigration_offices, current_user } = state;
 
     const [active_tab, set_active_tab] = useState('generate');
     const [is_upload_modal_open, set_is_upload_modal_open] = useState(false);
     
     const [selected_template, set_selected_template] = useState<DocumentTemplate | null>(null);
-    const [selected_client_id, set_selected_client_id] = useState<string>('');
+    const [selected_client_id, set_selected_client_id] = useState<string>(client_prop?.id || '');
     const [is_generating, set_is_generating] = useState(false);
     const [error, set_error] = useState<string | null>(null);
     const [template_search_term, set_template_search_term] = useState('');
@@ -91,10 +97,6 @@ const DocumentGenerator: React.FC = () => {
     const [missing_fields, set_missing_fields] = useState<MissingField[]>([]);
     const [is_missing_fields_modal_open, set_is_missing_fields_modal_open] = useState(false);
     const [data_for_generation, set_data_for_generation] = useState<any>(null);
-    
-    // New state for generation options
-    const [upload_to_profile, set_upload_to_profile] = useState(true);
-    const [add_log_entry, set_add_log_entry] = useState(true);
 
 
     const sorted_and_filtered_templates = useMemo(() => {
@@ -177,25 +179,14 @@ const DocumentGenerator: React.FC = () => {
                 mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             });
 
-            const client = clients.find(c => c.id === selected_client_id);
+            const client = client_prop || clients.find(c => c.id === selected_client_id);
             const file_name = `${selected_template!.name.replace(/[^\w\s]/gi, '').replace(/\s/g, '_')}_${client!.name.replace(/[^\w\s]/gi, '').replace(/\s/g, '_')}.docx`;
-            
-            let uploaded_file_id: string | undefined;
-            if (upload_to_profile) {
-                uploaded_file_id = await upload_generated_document({
-                    file_blob: out_blob,
-                    file_name: file_name,
-                    client_id: client!.id
-                });
-            }
 
-            if (add_log_entry) {
-                await add_action_log({
-                    client_id: client!.id,
-                    content: `Generated document: "${selected_template!.name}"`,
-                    uploaded_file_ids: uploaded_file_id ? [uploaded_file_id] : undefined,
-                });
-            }
+            // Always add a log entry
+            await add_action_log({
+                client_id: client!.id,
+                content: `Generated document: "${selected_template!.name}"`,
+            });
 
             // Always download the file for the user
             saveAs(out_blob, file_name);
@@ -217,7 +208,7 @@ const DocumentGenerator: React.FC = () => {
             set_error("Please select a template and a client.");
             return;
         }
-        const client = clients.find(c => c.id === selected_client_id);
+        const client = client_prop || clients.find(c => c.id === selected_client_id);
         if (!client) {
             set_error("Client not found.");
             return;
@@ -237,7 +228,7 @@ const DocumentGenerator: React.FC = () => {
             const zip = new PizZip(array_buffer);
             const doc = new Docxtemplater(zip, { nullGetter: () => "" });
             
-            const tags = doc.inspectModule("parser").getTags();
+            const tags = (doc as any).inspectModule("parser").getTags();
             const template_data = prepare_template_data(client);
 
             const found_missing_fields = find_missing_fields(tags, template_data);
@@ -264,7 +255,8 @@ const DocumentGenerator: React.FC = () => {
     
         try {
             let final_template_data = JSON.parse(JSON.stringify(data_for_generation));
-            let client_to_update = should_save ? JSON.parse(JSON.stringify(clients.find(c => c.id === selected_client_id))) : null;
+            const client_for_update_id = client_prop?.id || selected_client_id;
+            let client_to_update = should_save ? JSON.parse(JSON.stringify(clients.find(c => c.id === client_for_update_id))) : null;
             let update_log_messages: string[] = [];
     
             Object.entries(updated_data).forEach(([template_path, value]) => {
@@ -280,7 +272,7 @@ const DocumentGenerator: React.FC = () => {
     
             if (should_save && client_to_update) {
                 await update_client(client_to_update);
-                if (add_log_entry && update_log_messages.length > 0) {
+                if (update_log_messages.length > 0) {
                     const log_content = `Client profile updated during document generation:\n${update_log_messages.join('\n')}`;
                     await add_action_log({ client_id: client_to_update.id, content: log_content });
                 }
@@ -303,10 +295,8 @@ const DocumentGenerator: React.FC = () => {
         }
     };
     
-
     const is_admin = current_user?.role === UserRole.ADMIN;
     
-    // Fix for JSX parser error: Move strings with "{/" sequence into variables
     const loopExample = `{#assignees}
 - {{name}}, {{phone}}
 {/assignees}`;
@@ -346,168 +336,139 @@ Client has family members residing in Poland.
         </>
     );
 
+    const generator_view = (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* LEFT COLUMN: TEMPLATES */}
+            <div className="md:col-span-1">
+                <div className="flex justify-between items-center mb-2">
+                    <h3 className="text-lg font-semibold text-slate-100">Templates</h3>
+                    {is_admin && !is_embedded && (
+                        <button onClick={() => set_is_upload_modal_open(true)} className="flex items-center text-sm text-blue-400 hover:underline">
+                            <Icon name="upload" className="w-4 h-4 mr-1" /> Upload New
+                        </button>
+                    )}
+                </div>
+                <div className="relative my-4">
+                    <Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input type="text" placeholder="Search templates..." value={template_search_term} onChange={e => set_template_search_term(e.target.value)}
+                        className="w-full pl-9 pr-4 py-2 text-sm bg-slate-700 text-slate-100 border border-slate-600 rounded-lg placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                </div>
+                <div className="max-h-[60vh] overflow-y-auto pr-2">
+                    <TemplateList templates={standard_templates} title="Standard Templates" />
+                    <TemplateList templates={custom_templates} title="Custom Templates" />
+                </div>
+            </div>
+
+            {/* RIGHT COLUMN: GENERATION FORM */}
+            <div className="md:col-span-2">
+                <h3 className="text-lg font-semibold text-slate-100 mb-4">
+                    Generate Document {is_embedded && `for ${client_prop?.name}`}
+                </h3>
+                <div className="space-y-6">
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300">1. Selected Template</label>
+                        <div className="mt-1 p-3 bg-slate-700 rounded-md min-h-[40px]">
+                            <p className="text-slate-100">{selected_template?.name || 'Please select a template from the list.'}</p>
+                        </div>
+                    </div>
+
+                    {!is_embedded && (
+                        <div>
+                            <label htmlFor="client-select" className="block text-sm font-medium text-slate-300">2. Select Client</label>
+                            <select 
+                                id="client-select" 
+                                value={selected_client_id}
+                                onChange={(e) => set_selected_client_id(e.target.value)}
+                                className="mt-1 block w-full px-3 py-2 bg-slate-700 text-slate-100 border border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            >
+                                <option value="">-- Choose a client --</option>
+                                {clients.sort((a,b) => a.name.localeCompare(b.name)).map(client => (
+                                    <option key={client.id} value={client.id}>{client.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
+                    {error && <p className="text-sm text-red-400 bg-red-900/50 p-3 rounded-md">{error}</p>}
+
+                    <button 
+                        onClick={handle_generate}
+                        disabled={!selected_template || !selected_client_id || is_generating}
+                        className="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:ring-offset-slate-800 disabled:bg-slate-600 disabled:cursor-not-allowed"
+                    >
+                        {is_generating ? 'Generating...' : 'Generate & Download'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+
+    const tags_view = (
+        <div className="bg-slate-800 p-6 rounded-lg shadow-sm">
+            <p className="text-slate-300 mb-6">Use these tags in your `.docx` templates. They will be replaced with the selected client's data upon generation. If a value is not available for a client, it will be replaced with an empty string.</p>
+            
+            <TagExplanation title="Working with Lists (Loops)">
+                <p>{'Some data, like family members or assignees, is stored as a list. To display all items, you need to use a loop block in your template. The block starts with `{#list_name}` and ends with `{/list_name}`. Inside the block, you can use tags like `{{name}}` to access properties of each item.'}</p>
+                <p>Example for listing all assigned case managers:</p>
+                <pre className="bg-slate-900 p-2 rounded-md text-xs text-blue-300 font-mono">
+                    {loopExample}
+                </pre>
+            </TagExplanation>
+
+            <TagExplanation title="Conditional Blocks">
+                <p>{'You can show a block of text only if a value exists or is `true`. This is useful for optional information. The block starts with `{#variable_name}` and ends with `{/variable_name}`.'}</p>
+                <p>Example for showing a section only if the client has family in Poland:</p>
+                    <pre className="bg-slate-900 p-2 rounded-md text-xs text-blue-300 font-mono">
+                    {conditionalExample}
+                </pre>
+            </TagExplanation>
+
+            <div className="space-y-6">
+                <TagExplanation title="General Tags"><TagTable tags={TAGS.general} /></TagExplanation>
+                <TagExplanation title="Client Tags"><TagTable tags={TAGS.client} /></TagExplanation>
+                <TagExplanation title="Case Tags"><TagTable tags={TAGS.case} /></TagExplanation>
+                <TagExplanation title="Primary Assignee Tags"><TagTable tags={TAGS.primary_assignee} /></TagExplanation>
+                <TagExplanation title="All Assignees (Loop)">
+                    <p>{'Use `{#assignees}` to loop through all case managers. Inside the loop, you can use the same tags as "Primary Assignee Tags" (e.g., `{{name}}`, `{{email}}`).'}</p>
+                </TagExplanation>
+                <TagExplanation title="Questionnaire: Personal Data"><TagTable tags={TAGS.questionnaire_personal} /></TagExplanation>
+                <TagExplanation title="Questionnaire: Main Info"><TagTable tags={TAGS.questionnaire_main} /></TagExplanation>
+                <TagExplanation title="Questionnaire: Family Members (Loop)">
+                    <p>{'Use `{#questionnaire.family_members_in_poland}` to loop. Available tags inside:'}</p>
+                    <ul className="list-disc list-inside mt-2">
+                        <li>{'`{{full_name}}`, `{{sex}}`, `{{date_of_birth}}`, `{{degree_of_kinship}}`, `{{citizenship}}`, `{{place_of_residence}}`'}</li>
+                        <li>{'`{{is_applying}}` (true/false), `{{is_dependent}}` (true/false)'}</li>
+                    </ul>
+                </TagExplanation>
+                    <TagExplanation title="Questionnaire: Travels (Loop)">
+                    <p>{'Use `{#questionnaire.travels_and_stays_outside_poland}` to loop. Available tags inside:'}</p>
+                    <ul className="list-disc list-inside mt-2">
+                        <li>{'`{{from_date}}`, `{{to_date}}`, `{{country}}`'}</li>
+                    </ul>
+                </TagExplanation>
+            </div>
+        </div>
+    );
+
     return (
         <div>
-            <div className="flex justify-between items-center mb-4">
-                <h1 className="text-3xl font-bold text-slate-100">Document Generator</h1>
-            </div>
-            
-            <div className="flex space-x-2 border-b border-slate-700 mb-6">
-                <TabButton label="Generate Document" tab_name="generate" active_tab={active_tab} set_active_tab={set_active_tab} />
-                <TabButton label="Tag Reference" tab_name="tags" active_tab={active_tab} set_active_tab={set_active_tab} />
-            </div>
-
-            {active_tab === 'generate' && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* Column 1: Templates List */}
-                    <div className="md:col-span-1 bg-slate-800 p-6 rounded-lg shadow-sm">
-                        <div className="flex justify-between items-center mb-2">
-                            <h3 className="text-lg font-semibold text-slate-100">Templates</h3>
-                            {is_admin && (
-                                <button onClick={() => set_is_upload_modal_open(true)} className="flex items-center text-sm text-blue-400 hover:underline">
-                                    <Icon name="upload" className="w-4 h-4 mr-1" /> Upload New
-                                </button>
-                            )}
-                        </div>
-                        <div className="relative mb-4">
-                            <Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                            <input
-                                type="text"
-                                placeholder="Search templates..."
-                                value={template_search_term}
-                                onChange={e => set_template_search_term(e.target.value)}
-                                className="w-full pl-9 pr-4 py-2 text-sm bg-slate-700 text-slate-100 border border-slate-600 rounded-lg placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                        </div>
-                        <div className="max-h-[calc(60vh)] overflow-y-auto pr-2">
-                            <TemplateList templates={standard_templates} title="Standard Templates" />
-                            <TemplateList templates={custom_templates} title="Custom Templates" />
-                        </div>
+            {!is_embedded && (
+                <>
+                    <div className="flex justify-between items-center mb-4">
+                        <h1 className="text-3xl font-bold text-slate-100">Document Generator</h1>
                     </div>
-
-                    {/* Column 2: Generator */}
-                    <div className="md:col-span-2 bg-slate-800 p-6 rounded-lg shadow-sm">
-                        <h3 className="text-lg font-semibold text-slate-100 mb-4">Generate Document</h3>
-                        <div className="space-y-6">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-300">1. Selected Template</label>
-                                <div className="mt-1 p-3 bg-slate-700 rounded-md min-h-[40px]">
-                                    <p className="text-slate-100">{selected_template?.name || 'Please select a template from the list.'}</p>
-                                </div>
-                            </div>
-                            <div>
-                                <label htmlFor="client-select" className="block text-sm font-medium text-slate-300">2. Select Client</label>
-                                <select 
-                                    id="client-select" 
-                                    value={selected_client_id}
-                                    onChange={(e) => set_selected_client_id(e.target.value)}
-                                    className="mt-1 block w-full px-3 py-2 bg-slate-700 text-slate-100 border border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                >
-                                    <option value="">-- Choose a client --</option>
-                                    {clients.sort((a,b) => a.name.localeCompare(b.name)).map(client => (
-                                        <option key={client.id} value={client.id}>{client.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            
-                             <div>
-                                <label className="block text-sm font-medium text-slate-300">3. Options</label>
-                                <div className="mt-2 space-y-2 p-3 bg-slate-700/50 rounded-md">
-                                    <div className="flex items-center">
-                                        <input
-                                            id="upload-to-profile"
-                                            type="checkbox"
-                                            checked={upload_to_profile}
-                                            onChange={e => set_upload_to_profile(e.target.checked)}
-                                            className="h-4 w-4 rounded border-slate-500 bg-slate-600 text-blue-600 focus:ring-blue-500"
-                                        />
-                                        <label htmlFor="upload-to-profile" className="ml-2 block text-sm text-slate-300">
-                                            Upload generated document to client's profile?
-                                        </label>
-                                    </div>
-                                    <div className="flex items-center">
-                                        <input
-                                            id="add-log-entry"
-                                            type="checkbox"
-                                            checked={add_log_entry}
-                                            onChange={e => set_add_log_entry(e.target.checked)}
-                                            className="h-4 w-4 rounded border-slate-500 bg-slate-600 text-blue-600 focus:ring-blue-500"
-                                        />
-                                        <label htmlFor="add-log-entry" className="ml-2 block text-sm text-slate-300">
-                                            Add an action log entry about this generation?
-                                        </label>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            {error && <p className="text-sm text-red-400 bg-red-900/50 p-3 rounded-md">{error}</p>}
-                            
-                            <button 
-                                onClick={handle_generate}
-                                disabled={!selected_template || !selected_client_id || is_generating}
-                                className="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:ring-offset-slate-800 disabled:bg-slate-600 disabled:cursor-not-allowed"
-                            >
-                                {is_generating ? (
-                                    <>
-                                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
-                                        Generating...
-                                    </>
-                                ) : 'Generate & Download'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-            
-            {active_tab === 'tags' && (
-                 <div className="bg-slate-800 p-6 rounded-lg shadow-sm">
-                    <p className="text-slate-300 mb-6">Use these tags in your `.docx` templates. They will be replaced with the selected client's data upon generation. If a value is not available for a client, it will be replaced with an empty string.</p>
                     
-                    <TagExplanation title="Working with Lists (Loops)">
-                        <p>{'Some data, like family members or assignees, is stored as a list. To display all items, you need to use a loop block in your template. The block starts with `{#list_name}` and ends with `{/list_name}`. Inside the block, you can use tags like `{{name}}` to access properties of each item.'}</p>
-                        <p>Example for listing all assigned case managers:</p>
-                        <pre className="bg-slate-900 p-2 rounded-md text-xs text-blue-300 font-mono">
-                           {loopExample}
-                        </pre>
-                    </TagExplanation>
-
-                    <TagExplanation title="Conditional Blocks">
-                        <p>{'You can show a block of text only if a value exists or is `true`. This is useful for optional information. The block starts with `{#variable_name}` and ends with `{/variable_name}`.'}</p>
-                        <p>Example for showing a section only if the client has family in Poland:</p>
-                         <pre className="bg-slate-900 p-2 rounded-md text-xs text-blue-300 font-mono">
-                           {conditionalExample}
-                        </pre>
-                    </TagExplanation>
-
-                    <div className="space-y-6">
-                        <TagExplanation title="General Tags"><TagTable tags={TAGS.general} /></TagExplanation>
-                        <TagExplanation title="Client Tags"><TagTable tags={TAGS.client} /></TagExplanation>
-                        <TagExplanation title="Case Tags"><TagTable tags={TAGS.case} /></TagExplanation>
-                        <TagExplanation title="Primary Assignee Tags"><TagTable tags={TAGS.primary_assignee} /></TagExplanation>
-                        <TagExplanation title="All Assignees (Loop)">
-                           <p>{'Use `{#assignees}` to loop through all case managers. Inside the loop, you can use the same tags as "Primary Assignee Tags" (e.g., `{{name}}`, `{{email}}`).'}</p>
-                        </TagExplanation>
-                        <TagExplanation title="Questionnaire: Personal Data"><TagTable tags={TAGS.questionnaire_personal} /></TagExplanation>
-                        <TagExplanation title="Questionnaire: Main Info"><TagTable tags={TAGS.questionnaire_main} /></TagExplanation>
-                        <TagExplanation title="Questionnaire: Family Members (Loop)">
-                           <p>{'Use `{#questionnaire.family_members_in_poland}` to loop. Available tags inside:'}</p>
-                           <ul className="list-disc list-inside mt-2">
-                                <li>{'`{{full_name}}`, `{{sex}}`, `{{date_of_birth}}`, `{{degree_of_kinship}}`, `{{citizenship}}`, `{{place_of_residence}}`'}</li>
-                                <li>{'`{{is_applying}}` (true/false), `{{is_dependent}}` (true/false)'}</li>
-                           </ul>
-                        </TagExplanation>
-                         <TagExplanation title="Questionnaire: Travels (Loop)">
-                           <p>{'Use `{#questionnaire.travels_and_stays_outside_poland}` to loop. Available tags inside:'}</p>
-                           <ul className="list-disc list-inside mt-2">
-                                <li>{'`{{from_date}}`, `{{to_date}}`, `{{country}}`'}</li>
-                           </ul>
-                        </TagExplanation>
+                    <div className="flex space-x-2 border-b border-slate-700 mb-6">
+                        <TabButton label="Generate Document" tab_name="generate" active_tab={active_tab} set_active_tab={set_active_tab} />
+                        <TabButton label="Tag Reference" tab_name="tags" active_tab={active_tab} set_active_tab={set_active_tab} />
                     </div>
-                </div>
+                </>
             )}
+
+            {/* Main Content Area */}
+            {active_tab === 'generate' && (is_embedded ? <div className="bg-slate-800 p-6 rounded-lg shadow-sm">{generator_view}</div> : generator_view)}
+            
+            {!is_embedded && active_tab === 'tags' && tags_view}
             
             {is_upload_modal_open && <UploadTemplateModal isOpen={is_upload_modal_open} onClose={() => set_is_upload_modal_open(false)} />}
             {is_missing_fields_modal_open && <MissingFieldsModal isOpen={is_missing_fields_modal_open} onClose={() => set_is_missing_fields_modal_open(false)} missingFields={missing_fields} onSubmit={handle_missing_data_submit} />}

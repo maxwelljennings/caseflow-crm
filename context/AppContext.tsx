@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import type { Client, User, Task, File as ClientFile, ActionLogEntry, Payment, PaymentPlan, ImmigrationOffice, Notification, Session, DocumentTemplate, GeneratedDocUploadPayload } from '../types';
+import type { Client, User, Task, File as ClientFile, ActionLogEntry, Payment, PaymentPlan, ImmigrationOffice, Notification, Session, DocumentTemplate } from '../types';
 import { TaskStatus, UserRole } from '../types';
 
 interface AppState {
@@ -41,7 +41,6 @@ export interface AppContextType {
     upload_document_template: (payload: { file: File; name: string; description: string; category: 'standard' | 'custom'; }) => Promise<void>;
     delete_document_template: (template_id: string) => Promise<void>;
     increment_template_usage_count: (template_id: string) => Promise<void>;
-    upload_generated_document: (payload: GeneratedDocUploadPayload) => Promise<string | undefined>;
 }
 
 
@@ -762,39 +761,6 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
         }
     };
 
-    const upload_generated_document = async (payload: GeneratedDocUploadPayload): Promise<string | undefined> => {
-        const { file_blob, file_name, client_id } = payload;
-        const file_path = `${client_id}/${crypto.randomUUID()}-${file_name}`;
-
-        try {
-            const { error: upload_error } = await supabase.storage.from('client-files').upload(file_path, file_blob);
-            if (upload_error) throw new Error(`Storage upload failed: ${upload_error.message}`);
-            
-            const { data: url_data } = supabase.storage.from('client-files').getPublicUrl(file_path);
-
-            const file_metadata = {
-                client_id,
-                name: file_name,
-                type: 'docx',
-                size: format_file_size(file_blob.size),
-                upload_date: new Date().toISOString().split('T')[0],
-                url: url_data.publicUrl,
-                storage_path: file_path,
-            };
-
-            const { data: new_file_data, error: insert_error } = await supabase.from('files').insert(file_metadata).select().single();
-            if (insert_error) throw insert_error;
-            
-            set_files(prev => [...prev, new_file_data as ClientFile]);
-            return new_file_data.id;
-            
-        } catch (error: any) {
-            console.error("Error uploading generated document:", error);
-            alert(`Failed to upload generated document to client profile: ${error.message}`);
-            return undefined;
-        }
-    };
-
     const delete_document_template = async (template_id: string) => {
         const template_to_delete = document_templates.find(t => t.id === template_id);
         if (!template_to_delete) {
@@ -859,7 +825,6 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
         upload_document_template,
         delete_document_template,
         increment_template_usage_count,
-        upload_generated_document,
     }), [clients, users, tasks, immigration_offices, notifications, loading, current_user, session, files, action_logs, payments, document_templates]);
 
     return (

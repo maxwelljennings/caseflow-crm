@@ -15,6 +15,7 @@ import MentionSuggestions from './common/MentionSuggestions';
 import UserPopover from './common/UserPopover';
 import getCaretCoordinates from '../lib/getCaretCoordinates';
 import ClientFilesView from './ClientFilesView';
+import DocumentGenerator from './DocumentGenerator';
 
 
 interface ClientProfileProps {
@@ -341,6 +342,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client_id, set_view }) =>
                 <TabButton label="Overview" tab_name="overview" />
                 <TabButton label="Questionnaire" tab_name="questionnaire" />
                 <TabButton label="Payments" tab_name="payments" />
+                <TabButton label="Generate Document" tab_name="generate-document" />
             </div>
             
              {active_tab === 'overview' && (
@@ -579,6 +581,9 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ client_id, set_view }) =>
                 )}
                 {active_tab === 'payments' && (
                     <ClientPayments client={client} />
+                )}
+                 {active_tab === 'generate-document' && (
+                    <DocumentGenerator client_prop={client} is_embedded={true} />
                 )}
             </div>
             
