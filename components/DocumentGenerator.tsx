@@ -1,12 +1,31 @@
 import React, { useState, useMemo } from 'react';
 import { use_app_context } from '../hooks/useAppContext';
-import { Client, DocumentTemplate, UserRole } from '../types';
+import { Client, DocumentTemplate, UserRole, MissingField } from '../types';
 import Icon from './common/Icon';
 import UploadTemplateModal from './UploadTemplateModal';
+import MissingFieldsModal from './MissingFieldsModal';
 import { supabase } from '../lib/supabaseClient';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import saveAs from 'file-saver';
+
+// --- Helper Functions ---
+
+function getValueByPath(obj: any, path: string): any {
+    return path.split('.').reduce((acc, part) => acc && acc[part], obj);
+}
+
+function setValueByPath(obj: any, path: string, value: any) {
+    const keys = path.split('.');
+    let current = obj;
+    for (let i = 0; i < keys.length - 1; i++) {
+        if (current[keys[i]] === undefined || typeof current[keys[i]] !== 'object') {
+            current[keys[i]] = {};
+        }
+        current = current[keys[i]];
+    }
+    current[keys[keys.length - 1]] = value;
+}
 
 
 // --- Sub-Components ---
@@ -56,7 +75,7 @@ const TagTable: React.FC<{tags: {tag: string, desc: string}[]}> = ({tags}) => (
 
 
 const DocumentGenerator: React.FC = () => {
-    const { state, delete_document_template, increment_template_usage_count } = use_app_context();
+    const { state, delete_document_template, increment_template_usage_count, update_client, upload_generated_document, add_action_log } = use_app_context();
     const { document_templates, clients, users, immigration_offices, current_user } = state;
 
     const [active_tab, set_active_tab] = useState('generate');
@@ -67,6 +86,16 @@ const DocumentGenerator: React.FC = () => {
     const [is_generating, set_is_generating] = useState(false);
     const [error, set_error] = useState<string | null>(null);
     const [template_search_term, set_template_search_term] = useState('');
+    
+    // State for missing fields modal
+    const [missing_fields, set_missing_fields] = useState<MissingField[]>([]);
+    const [is_missing_fields_modal_open, set_is_missing_fields_modal_open] = useState(false);
+    const [data_for_generation, set_data_for_generation] = useState<any>(null);
+    
+    // New state for generation options
+    const [upload_to_profile, set_upload_to_profile] = useState(true);
+    const [add_log_entry, set_add_log_entry] = useState(true);
+
 
     const sorted_and_filtered_templates = useMemo(() => {
         const sorted = [...document_templates].sort((a, b) => {
@@ -99,7 +128,7 @@ const DocumentGenerator: React.FC = () => {
             await delete_document_template(template.id);
         }
     };
-
+    
     const prepare_template_data = (client: Client) => {
         const office = immigration_offices.find(o => o.id === client.immigration_case.office_id);
         const assignees = users.filter(u => client.assignee_ids.includes(u.id));
@@ -131,6 +160,58 @@ const DocumentGenerator: React.FC = () => {
         };
     };
 
+    const process_document_generation = async (data_to_render: any, template_array_buffer: ArrayBuffer) => {
+         try {
+            const zip = new PizZip(template_array_buffer);
+            const doc = new Docxtemplater(zip, {
+                paragraphLoop: true,
+                linebreaks: true,
+                nullGetter: () => ""
+            });
+            
+            doc.setData(data_to_render);
+            doc.render();
+
+            const out_blob = doc.getZip().generate({
+                type: 'blob',
+                mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            });
+
+            const client = clients.find(c => c.id === selected_client_id);
+            const file_name = `${selected_template!.name.replace(/[^\w\s]/gi, '').replace(/\s/g, '_')}_${client!.name.replace(/[^\w\s]/gi, '').replace(/\s/g, '_')}.docx`;
+            
+            let uploaded_file_id: string | undefined;
+            if (upload_to_profile) {
+                uploaded_file_id = await upload_generated_document({
+                    file_blob: out_blob,
+                    file_name: file_name,
+                    client_id: client!.id
+                });
+            }
+
+            if (add_log_entry) {
+                await add_action_log({
+                    client_id: client!.id,
+                    content: `Generated document: "${selected_template!.name}"`,
+                    uploaded_file_ids: uploaded_file_id ? [uploaded_file_id] : undefined,
+                });
+            }
+
+            // Always download the file for the user
+            saveAs(out_blob, file_name);
+            
+            await increment_template_usage_count(selected_template!.id);
+
+         } catch (error: any) {
+            console.error("Docxtemplater render error:", error);
+            if(error.properties) {
+                throw new Error(`Template Error: ${error.properties.explanation}. Check tag '{${error.properties.id}}' in your template.`);
+            }
+            throw error;
+        }
+    };
+    
+
     const handle_generate = async () => {
         if (!selected_template || !selected_client_id) {
             set_error("Please select a template and a client.");
@@ -153,78 +234,77 @@ const DocumentGenerator: React.FC = () => {
             if (download_error) throw download_error;
             
             const array_buffer = await blob.arrayBuffer();
-
             const zip = new PizZip(array_buffer);
-            const doc = new Docxtemplater(zip, {
-                paragraphLoop: true,
-                linebreaks: true,
-                nullGetter: () => "" // Return empty string for null/undefined values
-            });
+            const doc = new Docxtemplater(zip, { nullGetter: () => "" });
             
+            const tags = doc.inspectModule("parser").getTags();
             const template_data = prepare_template_data(client);
-            doc.setData(template_data);
-            
-            try {
-                doc.render();
-            } catch (error: any) {
-                console.error("Docxtemplater render error:", error);
-                throw new Error(`Template Error: ${error.properties.explanation}. Check tag '{${error.properties.id}}' in your template.`);
+
+            const found_missing_fields = find_missing_fields(tags, template_data);
+
+            if (found_missing_fields.length > 0) {
+                set_missing_fields(found_missing_fields);
+                set_data_for_generation(template_data);
+                set_is_missing_fields_modal_open(true);
+                set_is_generating(false);
+            } else {
+                await process_document_generation(template_data, array_buffer);
+                set_is_generating(false);
             }
-
-            const out_blob = doc.getZip().generate({
-                type: 'blob',
-                mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            });
-
-            const file_name = `${selected_template.name.replace(/\s/g, '_')}_${client.name.replace(/\s/g, '_')}.docx`;
-            saveAs(out_blob, file_name);
-            await increment_template_usage_count(selected_template.id);
-
         } catch (err: any) {
             console.error("Error generating document:", err);
             set_error(err.message || 'An unknown error occurred during document generation.');
-        } finally {
             set_is_generating(false);
         }
     };
 
-    const is_admin = current_user?.role === UserRole.ADMIN;
+    const handle_missing_data_submit = async (updated_data: Record<string, string>, should_save: boolean) => {
+        set_is_missing_fields_modal_open(false);
+        set_is_generating(true);
+    
+        try {
+            let final_template_data = JSON.parse(JSON.stringify(data_for_generation));
+            let client_to_update = should_save ? JSON.parse(JSON.stringify(clients.find(c => c.id === selected_client_id))) : null;
+            let update_log_messages: string[] = [];
+    
+            Object.entries(updated_data).forEach(([template_path, value]) => {
+                setValueByPath(final_template_data, template_path, value);
+                if (should_save && client_to_update) {
+                    const tag_info = TAG_MAP[template_path];
+                    if (tag_info) {
+                        setValueByPath(client_to_update, tag_info.clientPath, value);
+                        update_log_messages.push(`- "${tag_info.label}" was updated.`);
+                    }
+                }
+            });
+    
+            if (should_save && client_to_update) {
+                await update_client(client_to_update);
+                if (add_log_entry && update_log_messages.length > 0) {
+                    const log_content = `Client profile updated during document generation:\n${update_log_messages.join('\n')}`;
+                    await add_action_log({ client_id: client_to_update.id, content: log_content });
+                }
+            }
+            
+            const { data: blob, error: download_error } = await supabase.storage
+                .from('document-templates')
+                .download(selected_template!.storage_path);
+            if(download_error) throw download_error;
 
-    // --- Tags for Reference Page ---
-    const TAGS = {
-        general: [ {tag: 'date.today', desc: 'Current date (e.g., 16.08.2024)'}, {tag: 'date.iso', desc: 'Current date in ISO format (e.g., 2024-08-16)'}, ],
-        client: [ {tag: 'client.name', desc: "Client's full name"}, {tag: 'client.email', desc: "Client's email address"}, {tag: 'client.phone', desc: "Client's phone number"}, {tag: 'client.nationality', desc: "Client's nationality"}, {tag: 'client.passport_number', desc: "Client's passport number"}, {tag: 'client.case_description', desc: 'The case summary from the client profile'}, ],
-        case: [ {tag: 'case.case_number', desc: 'The immigration case number'}, {tag: 'case.case_password', desc: 'Password for the online case portal'}, {tag: 'case.office_name', desc: 'Name of the Immigration Office'}, {tag: 'case.office_address', desc: 'Address of the Immigration Office'}, ],
-        primary_assignee: [ {tag: 'primary_assignee.name', desc: 'Full name of the primary case manager'}, {tag: 'primary_assignee.email', desc: 'Email of the primary case manager'}, {tag: 'primary_assignee.phone', desc: 'Phone number of the primary case manager'}, {tag: 'primary_assignee.description', desc: 'Profile description of the primary case manager'}, ],
-        questionnaire_personal: [
-            {tag: 'questionnaire.personal_data.surname', desc: 'Surname'},
-            {tag: 'questionnaire.personal_data.name', desc: 'First name(s)'},
-            {tag: 'questionnaire.personal_data.family_name', desc: 'Family name'},
-            {tag: 'questionnaire.personal_data.previously_used_surnames', desc: 'Previously used surnames'},
-            {tag: 'questionnaire.personal_data.previously_used_names', desc: 'Previously used names'},
-            {tag: 'questionnaire.personal_data.fathers_name', desc: "Father's name"},
-            {tag: 'questionnaire.personal_data.mothers_name', desc: "Mother's name"},
-            {tag: 'questionnaire.personal_data.mothers_maiden_name', desc: "Mother's maiden name"},
-            {tag: 'questionnaire.personal_data.date_of_birth', desc: 'Date of birth (YYYY-MM-DD)'},
-            {tag: 'questionnaire.personal_data.place_of_birth', desc: 'Place of birth'},
-            {tag: 'questionnaire.personal_data.country_of_birth', desc: 'Country of birth'},
-            {tag: 'questionnaire.personal_data.citizenship', desc: 'Citizenship'},
-            {tag: 'questionnaire.personal_data.marital_status', desc: 'Marital Status (Single, Married, etc.)'},
-            {tag: 'questionnaire.personal_data.education', desc: 'Education level (Primary, Secondary, etc.)'},
-            {tag: 'questionnaire.personal_data.height', desc: 'Height in cm'},
-            {tag: 'questionnaire.personal_data.eye_color', desc: 'Eye color'},
-            {tag: 'questionnaire.personal_data.special_marks', desc: 'Special marks'},
-            {tag: 'questionnaire.personal_data.pesel', desc: 'PESEL number'},
-        ],
-        questionnaire_main: [
-            {tag: 'questionnaire.place_of_residence_in_poland', desc: 'Full address in Poland'},
-            {tag: 'questionnaire.last_entry_date_to_poland', desc: 'Date of last entry to Poland (YYYY-MM-DD)'},
-            {tag: 'questionnaire.has_family_in_poland', desc: 'True/False if family is in Poland'},
-            {tag: 'questionnaire.was_sentenced_in_poland', desc: 'True/False if sentenced by a court'},
-            {tag: 'questionnaire.is_subject_of_criminal_proceedings', desc: 'True/False if subject to criminal proceedings'},
-            {tag: 'questionnaire.has_liabilities', desc: 'True/False if has financial liabilities'},
-        ],
+            const array_buffer = await blob.arrayBuffer();
+            await process_document_generation(final_template_data, array_buffer);
+    
+        } catch (err: any) {
+            console.error("Error during final document generation:", err);
+            set_error(err.message || 'An error occurred while generating the document with new data.');
+        } finally {
+            set_is_generating(false);
+            set_data_for_generation(null);
+        }
     };
+    
+
+    const is_admin = current_user?.role === UserRole.ADMIN;
     
     // Fix for JSX parser error: Move strings with "{/" sequence into variables
     const loopExample = `{#assignees}
@@ -330,6 +410,36 @@ Client has family members residing in Poland.
                                 </select>
                             </div>
                             
+                             <div>
+                                <label className="block text-sm font-medium text-slate-300">3. Options</label>
+                                <div className="mt-2 space-y-2 p-3 bg-slate-700/50 rounded-md">
+                                    <div className="flex items-center">
+                                        <input
+                                            id="upload-to-profile"
+                                            type="checkbox"
+                                            checked={upload_to_profile}
+                                            onChange={e => set_upload_to_profile(e.target.checked)}
+                                            className="h-4 w-4 rounded border-slate-500 bg-slate-600 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <label htmlFor="upload-to-profile" className="ml-2 block text-sm text-slate-300">
+                                            Upload generated document to client's profile?
+                                        </label>
+                                    </div>
+                                    <div className="flex items-center">
+                                        <input
+                                            id="add-log-entry"
+                                            type="checkbox"
+                                            checked={add_log_entry}
+                                            onChange={e => set_add_log_entry(e.target.checked)}
+                                            className="h-4 w-4 rounded border-slate-500 bg-slate-600 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <label htmlFor="add-log-entry" className="ml-2 block text-sm text-slate-300">
+                                            Add an action log entry about this generation?
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             {error && <p className="text-sm text-red-400 bg-red-900/50 p-3 rounded-md">{error}</p>}
                             
                             <button 
@@ -353,7 +463,7 @@ Client has family members residing in Poland.
             )}
             
             {active_tab === 'tags' && (
-                <div className="bg-slate-800 p-6 rounded-lg shadow-sm">
+                 <div className="bg-slate-800 p-6 rounded-lg shadow-sm">
                     <p className="text-slate-300 mb-6">Use these tags in your `.docx` templates. They will be replaced with the selected client's data upon generation. If a value is not available for a client, it will be replaced with an empty string.</p>
                     
                     <TagExplanation title="Working with Lists (Loops)">
@@ -400,8 +510,90 @@ Client has family members residing in Poland.
             )}
             
             {is_upload_modal_open && <UploadTemplateModal isOpen={is_upload_modal_open} onClose={() => set_is_upload_modal_open(false)} />}
+            {is_missing_fields_modal_open && <MissingFieldsModal isOpen={is_missing_fields_modal_open} onClose={() => set_is_missing_fields_modal_open(false)} missingFields={missing_fields} onSubmit={handle_missing_data_submit} />}
         </div>
     );
+};
+
+// --- Tag Mapping & Logic for Missing Fields ---
+
+const TAG_MAP: Record<string, { label: string; clientPath: string }> = {
+    // Client Details
+    'client.name': { label: 'Full Name', clientPath: 'name' },
+    'client.email': { label: 'Email Address', clientPath: 'contact.email' },
+    'client.phone': { label: 'Phone Number', clientPath: 'contact.phone' },
+    'client.nationality': { label: 'Nationality', clientPath: 'details.nationality' },
+    'client.passport_number': { label: 'Passport Number', clientPath: 'details.passport_number' },
+    'client.case_description': { label: 'Case Summary', clientPath: 'case_description'},
+    // Case Details
+    'case.case_number': { label: 'Case Number', clientPath: 'immigration_case.case_number' },
+    'case.case_password': { label: 'Password to Case', clientPath: 'immigration_case.case_password' },
+    // Questionnaire - Personal Data
+    'questionnaire.personal_data.surname': { label: 'Surname (Questionnaire)', clientPath: 'questionnaire.personal_data.surname' },
+    'questionnaire.personal_data.name': { label: 'First Name(s) (Questionnaire)', clientPath: 'questionnaire.personal_data.name' },
+    'questionnaire.personal_data.family_name': { label: 'Family Name (Questionnaire)', clientPath: 'questionnaire.personal_data.family_name' },
+    'questionnaire.personal_data.date_of_birth': { label: 'Date of Birth (Questionnaire)', clientPath: 'questionnaire.personal_data.date_of_birth' },
+    'questionnaire.personal_data.place_of_birth': { label: 'Place of Birth (Questionnaire)', clientPath: 'questionnaire.personal_data.place_of_birth' },
+    'questionnaire.personal_data.country_of_birth': { label: 'Country of Birth (Questionnaire)', clientPath: 'questionnaire.personal_data.country_of_birth' },
+    'questionnaire.personal_data.pesel': { label: 'PESEL Number (Questionnaire)', clientPath: 'questionnaire.personal_data.pesel' },
+     // Questionnaire - Main
+    'questionnaire.place_of_residence_in_poland': { label: 'Place of Residence in Poland', clientPath: 'questionnaire.place_of_residence_in_poland'},
+    'questionnaire.last_entry_date_to_poland': { label: 'Date of Last Entry to Poland', clientPath: 'questionnaire.last_entry_date_to_poland'},
+};
+
+const find_missing_fields = (tags: {value: string}[], template_data: any): MissingField[] => {
+    const missing: MissingField[] = [];
+    const unique_tags = [...new Set(tags.map(t => t.value))];
+
+    for (const tag of unique_tags) {
+        if (TAG_MAP[tag]) { // Is it a tag we care about checking?
+            const value = getValueByPath(template_data, tag);
+            if (!value) { // Simple check for falsy values (null, undefined, '')
+                missing.push({
+                    path: tag,
+                    label: TAG_MAP[tag].label,
+                    value: ''
+                });
+            }
+        }
+    }
+    return missing;
+};
+
+// --- Tags for Reference Page ---
+const TAGS = {
+    general: [ {tag: 'date.today', desc: 'Current date (e.g., 16.08.2024)'}, {tag: 'date.iso', desc: 'Current date in ISO format (e.g., 2024-08-16)'}, ],
+    client: [ {tag: 'client.name', desc: "Client's full name"}, {tag: 'client.email', desc: "Client's email address"}, {tag: 'client.phone', desc: "Client's phone number"}, {tag: 'client.nationality', desc: "Client's nationality"}, {tag: 'client.passport_number', desc: "Client's passport number"}, {tag: 'client.case_description', desc: 'The case summary from the client profile'}, ],
+    case: [ {tag: 'case.case_number', desc: 'The immigration case number'}, {tag: 'case.case_password', desc: 'Password for the online case portal'}, {tag: 'case.office_name', desc: 'Name of the Immigration Office'}, {tag: 'case.office_address', desc: 'Address of the Immigration Office'}, ],
+    primary_assignee: [ {tag: 'primary_assignee.name', desc: 'Full name of the primary case manager'}, {tag: 'primary_assignee.email', desc: 'Email of the primary case manager'}, {tag: 'primary_assignee.phone', desc: 'Phone number of the primary case manager'}, {tag: 'primary_assignee.description', desc: 'Profile description of the primary case manager'}, ],
+    questionnaire_personal: [
+        {tag: 'questionnaire.personal_data.surname', desc: 'Surname'},
+        {tag: 'questionnaire.personal_data.name', desc: 'First name(s)'},
+        {tag: 'questionnaire.personal_data.family_name', desc: 'Family name'},
+        {tag: 'questionnaire.personal_data.previously_used_surnames', desc: 'Previously used surnames'},
+        {tag: 'questionnaire.personal_data.previously_used_names', desc: 'Previously used names'},
+        {tag: 'questionnaire.personal_data.fathers_name', desc: "Father's name"},
+        {tag: 'questionnaire.personal_data.mothers_name', desc: "Mother's name"},
+        {tag: 'questionnaire.personal_data.mothers_maiden_name', desc: "Mother's maiden name"},
+        {tag: 'questionnaire.personal_data.date_of_birth', desc: 'Date of birth (YYYY-MM-DD)'},
+        {tag: 'questionnaire.personal_data.place_of_birth', desc: 'Place of birth'},
+        {tag: 'questionnaire.personal_data.country_of_birth', desc: 'Country of birth'},
+        {tag: 'questionnaire.personal_data.citizenship', desc: 'Citizenship'},
+        {tag: 'questionnaire.personal_data.marital_status', desc: 'Marital Status (Single, Married, etc.)'},
+        {tag: 'questionnaire.personal_data.education', desc: 'Education level (Primary, Secondary, etc.)'},
+        {tag: 'questionnaire.personal_data.height', desc: 'Height in cm'},
+        {tag: 'questionnaire.personal_data.eye_color', desc: 'Eye color'},
+        {tag: 'questionnaire.personal_data.special_marks', desc: 'Special marks'},
+        {tag: 'questionnaire.personal_data.pesel', desc: 'PESEL number'},
+    ],
+    questionnaire_main: [
+        {tag: 'questionnaire.place_of_residence_in_poland', desc: 'Full address in Poland'},
+        {tag: 'questionnaire.last_entry_date_to_poland', desc: 'Date of last entry to Poland (YYYY-MM-DD)'},
+        {tag: 'questionnaire.has_family_in_poland', desc: 'True/False if family is in Poland'},
+        {tag: 'questionnaire.was_sentenced_in_poland', desc: 'True/False if sentenced by a court'},
+        {tag: 'questionnaire.is_subject_of_criminal_proceedings', desc: 'True/False if subject to criminal proceedings'},
+        {tag: 'questionnaire.has_liabilities', desc: 'True/False if has financial liabilities'},
+    ],
 };
 
 export default DocumentGenerator;

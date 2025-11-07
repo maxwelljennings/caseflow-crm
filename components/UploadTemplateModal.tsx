@@ -12,6 +12,7 @@ const UploadTemplateModal: React.FC<UploadTemplateModalProps> = ({ isOpen, onClo
     const [name, set_name] = useState('');
     const [description, set_description] = useState('');
     const [file, set_file] = useState<File | null>(null);
+    const [category, set_category] = useState<'standard' | 'custom'>('custom');
     const [error, set_error] = useState<string | null>(null);
     const [is_uploading, set_is_uploading] = useState(false);
     const file_input_ref = useRef<HTMLInputElement>(null);
@@ -42,7 +43,7 @@ const UploadTemplateModal: React.FC<UploadTemplateModalProps> = ({ isOpen, onClo
         set_error(null);
 
         try {
-            await upload_document_template({ file, name, description });
+            await upload_document_template({ file, name, description, category });
             onClose();
         } catch (err: any) {
             set_error(err.message || 'An unexpected error occurred.');
@@ -84,6 +85,18 @@ const UploadTemplateModal: React.FC<UploadTemplateModalProps> = ({ isOpen, onClo
                             rows={3} 
                             className={input_styles} 
                         />
+                    </div>
+                    <div>
+                        <label htmlFor="template-category" className="block text-sm font-medium text-slate-300">Category</label>
+                         <select
+                            id="template-category"
+                            value={category}
+                            onChange={e => set_category(e.target.value as 'standard' | 'custom')}
+                            className={input_styles}
+                        >
+                            <option value="custom">Custom</option>
+                            <option value="standard">Standard</option>
+                        </select>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-slate-300">Template File (.docx)</label>

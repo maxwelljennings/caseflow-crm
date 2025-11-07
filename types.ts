@@ -218,3 +218,15 @@ export interface DocumentTemplate {
     usage_count: number;
     category: 'standard' | 'custom';
 }
+
+export interface MissingField {
+    path: string; // e.g., 'client.passport_number'
+    label: string; // e.g., 'Passport Number'
+    value: string; // The current (empty) value, to be filled by user
+}
+
+export interface GeneratedDocUploadPayload {
+    file_blob: Blob;
+    file_name: string;
+    client_id: string;
+}

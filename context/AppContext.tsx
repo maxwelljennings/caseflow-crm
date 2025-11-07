@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import type { Client, User, Task, File as ClientFile, ActionLogEntry, Payment, PaymentPlan, ImmigrationOffice, Notification, Session, DocumentTemplate } from '../types';
+import type { Client, User, Task, File as ClientFile, ActionLogEntry, Payment, PaymentPlan, ImmigrationOffice, Notification, Session, DocumentTemplate, GeneratedDocUploadPayload } from '../types';
 import { TaskStatus, UserRole } from '../types';
 
 interface AppState {
@@ -27,7 +27,7 @@ export interface AppContextType {
     update_task: (task: Task) => Promise<void>;
     delete_task: (task_id: string) => Promise<void>;
     update_task_status: (task_id: string, status: TaskStatus) => Promise<void>;
-    add_action_log: (payload: { client_id: string; content: string; files_to_upload?: File[]; mentions?: string[] }) => Promise<void>;
+    add_action_log: (payload: { client_id: string; content: string; files_to_upload?: File[]; mentions?: string[], uploaded_file_ids?: string[] }) => Promise<void>;
     update_action_log: (log_id: string, content: string) => Promise<void>;
     delete_action_log: (log_id: string) => Promise<void>;
     update_client_payments: (client_id: string, payment_plan: PaymentPlan | undefined, payments: Payment[]) => Promise<void>;
@@ -38,9 +38,10 @@ export interface AppContextType {
     sign_out: () => Promise<void>;
     update_user_avatar: (file: File) => Promise<void>;
     update_user_role: (user_id: string, role: UserRole) => Promise<void>;
-    upload_document_template: (payload: { file: File; name: string; description: string; }) => Promise<void>;
+    upload_document_template: (payload: { file: File; name: string; description: string; category: 'standard' | 'custom'; }) => Promise<void>;
     delete_document_template: (template_id: string) => Promise<void>;
     increment_template_usage_count: (template_id: string) => Promise<void>;
+    upload_generated_document: (payload: GeneratedDocUploadPayload) => Promise<string | undefined>;
 }
 
 
@@ -352,14 +353,14 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
         else if (data) set_tasks(prev => prev.map(t => t.id === data.id ? data : t));
     };
     
-    const add_action_log = async (payload: { client_id: string; content: string; files_to_upload?: File[]; mentions?: string[] }) => {
+    const add_action_log = async (payload: { client_id: string; content: string; files_to_upload?: File[]; mentions?: string[]; uploaded_file_ids?: string[] }) => {
         if (!current_user) {
             alert("You must be logged in to perform this action.");
             return;
         }
 
-        const { client_id, content, files_to_upload, mentions } = payload;
-        let uploaded_file_ids: string[] = [];
+        const { client_id, content, files_to_upload, mentions, uploaded_file_ids: pre_uploaded_ids } = payload;
+        let all_uploaded_file_ids = [...(pre_uploaded_ids || [])];
 
         try {
             if (files_to_upload && files_to_upload.length > 0) {
@@ -386,8 +387,9 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
                 const files_metadata = await Promise.all(upload_promises);
                 const { data: new_files_data, error: insert_error } = await supabase.from('files').insert(files_metadata).select();
                 if (insert_error) throw insert_error;
-
-                uploaded_file_ids = new_files_data.map(f => f.id);
+                
+                const new_file_ids = new_files_data.map(f => f.id);
+                all_uploaded_file_ids.push(...new_file_ids);
                 set_files(prev => [...prev, ...(new_files_data as ClientFile[])]);
             }
 
@@ -395,7 +397,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
                 user_id: current_user.id, 
                 client_id, 
                 content, 
-                file_ids: uploaded_file_ids.length > 0 ? uploaded_file_ids : undefined,
+                file_ids: all_uploaded_file_ids.length > 0 ? all_uploaded_file_ids : undefined,
                 mentions: mentions && mentions.length > 0 ? mentions : undefined,
             };
             const { data: log_data, error: log_error } = await supabase.from('action_log').insert(new_log).select().single();
@@ -726,12 +728,12 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
         }
     };
 
-    const upload_document_template = async (payload: { file: File; name: string; description: string; }) => {
+    const upload_document_template = async (payload: { file: File; name: string; description: string; category: 'standard' | 'custom' }) => {
         if (!current_user) {
             alert('You must be logged in.');
             return;
         }
-        const { file, name, description } = payload;
+        const { file, name, description, category } = payload;
         const file_path = `public/${crypto.randomUUID()}-${file.name}`;
         
         try {
@@ -743,7 +745,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
                 description,
                 storage_path: file_path,
                 uploaded_by: current_user.id,
-                // category will default to 'custom' in the DB
+                category,
             };
 
             const { data, error: insert_error } = await supabase.from('document_templates').insert(template_to_insert).select().single();
@@ -757,6 +759,39 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
         } catch (error: any) {
             console.error("Error uploading document template:", error);
             alert(`Failed to upload template: ${error.message}`);
+        }
+    };
+
+    const upload_generated_document = async (payload: GeneratedDocUploadPayload): Promise<string | undefined> => {
+        const { file_blob, file_name, client_id } = payload;
+        const file_path = `${client_id}/${crypto.randomUUID()}-${file_name}`;
+
+        try {
+            const { error: upload_error } = await supabase.storage.from('client-files').upload(file_path, file_blob);
+            if (upload_error) throw new Error(`Storage upload failed: ${upload_error.message}`);
+            
+            const { data: url_data } = supabase.storage.from('client-files').getPublicUrl(file_path);
+
+            const file_metadata = {
+                client_id,
+                name: file_name,
+                type: 'docx',
+                size: format_file_size(file_blob.size),
+                upload_date: new Date().toISOString().split('T')[0],
+                url: url_data.publicUrl,
+                storage_path: file_path,
+            };
+
+            const { data: new_file_data, error: insert_error } = await supabase.from('files').insert(file_metadata).select().single();
+            if (insert_error) throw insert_error;
+            
+            set_files(prev => [...prev, new_file_data as ClientFile]);
+            return new_file_data.id;
+            
+        } catch (error: any) {
+            console.error("Error uploading generated document:", error);
+            alert(`Failed to upload generated document to client profile: ${error.message}`);
+            return undefined;
         }
     };
 
@@ -824,6 +859,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
         upload_document_template,
         delete_document_template,
         increment_template_usage_count,
+        upload_generated_document,
     }), [clients, users, tasks, immigration_offices, notifications, loading, current_user, session, files, action_logs, payments, document_templates]);
 
     return (
