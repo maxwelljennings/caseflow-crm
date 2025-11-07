@@ -233,6 +233,7 @@ const Clients: React.FC<ClientsProps> = ({ navigate_to_client }) => {
             })}
           </tbody>
         </table>
+        {sorted_clients.length === 0 && <p className="p-4 text-center text-slate-500">No clients match the current filters.</p>}
       </div>
 
       <AddClientModal isOpen={is_modal_open} onClose={() => set_is_modal_open(false)} />

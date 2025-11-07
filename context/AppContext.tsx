@@ -1,10 +1,11 @@
 
 
 
+
 import React, { createContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import type { Client, User, Task, File as ClientFile, ActionLogEntry, Payment, PaymentPlan, ImmigrationOffice, Notification, Session } from '../types';
-import { TaskStatus } from '../types';
+import { TaskStatus, UserRole } from '../types';
 
 interface AppState {
     clients: Client[];
@@ -39,6 +40,7 @@ export interface AppContextType {
     mark_all_notifications_read: () => Promise<void>;
     sign_out: () => Promise<void>;
     update_user_avatar: (file: File) => Promise<void>;
+    update_user_role: (user_id: string, role: UserRole) => Promise<void>;
 }
 
 
@@ -612,6 +614,35 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
             alert(`Failed to update avatar: ${error.message}`);
         }
     };
+
+    const update_user_role = async (user_id: string, role: UserRole) => {
+        if (!current_user || current_user.role !== UserRole.ADMIN) {
+            alert("You don't have permission to change user roles.");
+            return;
+        }
+
+        const admin_count = users.filter(u => u.role === UserRole.ADMIN).length;
+        const target_user = users.find(u => u.id === user_id);
+
+        if (admin_count === 1 && target_user?.role === UserRole.ADMIN && role === UserRole.MANAGER) {
+            alert("Cannot remove the last administrator.");
+            return;
+        }
+
+        const { data, error } = await supabase
+            .from('profiles')
+            .update({ role })
+            .eq('id', user_id)
+            .select()
+            .single();
+        
+        if (error) {
+            console.error("Error updating user role:", error);
+            alert(`Failed to update role: ${error.message}`);
+        } else if (data) {
+            set_users(prev => prev.map(u => u.id === user_id ? (data as User) : u));
+        }
+    };
     
     const context_value = useMemo(() => ({
         state: { clients, users, tasks, immigration_offices, notifications, loading, current_user, session, files, action_logs, payments },
@@ -632,6 +663,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
         mark_all_notifications_read,
         sign_out,
         update_user_avatar,
+        update_user_role,
     }), [clients, users, tasks, immigration_offices, notifications, loading, current_user, session, files, action_logs, payments]);
 
     return (

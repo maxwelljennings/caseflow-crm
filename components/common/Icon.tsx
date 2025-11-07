@@ -1,7 +1,7 @@
 import React from 'react';
 
 // Fix: Export IconName type to be reusable in other components.
-export type IconName = 'dashboard' | 'clients' | 'tasks' | 'settings' | 'plus' | 'edit' | 'trash' | 'download' | 'upload' | 'pdf' | 'jpg' | 'png' | 'doc' | 'check' | 'calendar' | 'user' | 'case' | 'office' | 'status' | 'phone' | 'email' | 'nationality' | 'passport' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'more-horizontal' | 'search' | 'x' | 'message-square' | 'file' | 'chevron-up' | 'paperclip' | 'bell' | 'dollar-sign' | 'filter' | 'user-plus' | 'user-minus' | 'at-sign';
+export type IconName = 'dashboard' | 'clients' | 'tasks' | 'settings' | 'plus' | 'edit' | 'trash' | 'download' | 'upload' | 'pdf' | 'jpg' | 'png' | 'doc' | 'check' | 'calendar' | 'user' | 'case' | 'office' | 'status' | 'phone' | 'email' | 'nationality' | 'passport' | 'chevron-down' | 'chevron-left' | 'chevron-right' | 'more-horizontal' | 'search' | 'x' | 'message-square' | 'file' | 'chevron-up' | 'paperclip' | 'bell' | 'dollar-sign' | 'filter' | 'user-plus' | 'user-minus' | 'at-sign' | 'shield';
 
 interface IconProps extends React.SVGProps<SVGSVGElement> {
   name: IconName;
@@ -47,7 +47,8 @@ const icons: Record<IconName, React.ReactElement> = {
   'filter': <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>,
   'user-plus': <><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="17" y1="11" x2="23" y2="11"></line></>,
   'user-minus': <><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="23" y1="11" x2="17" y2="11"></line></>,
-  'at-sign': <><circle cx="12" cy="12" r="4"></circle><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"></path></>
+  'at-sign': <><circle cx="12" cy="12" r="4"></circle><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"></path></>,
+  shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>,
 };
 
 const Icon: React.FC<IconProps> = ({ name, className = 'w-6 h-6', ...props }) => {

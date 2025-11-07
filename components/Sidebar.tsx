@@ -1,6 +1,8 @@
 
+
 import React from 'react';
 import type { View } from '../types';
+import { UserRole } from '../types';
 import Icon from './common/Icon';
 import { use_app_context } from '../hooks/useAppContext';
 
@@ -65,6 +67,16 @@ const Sidebar: React.FC<SidebarProps> = ({ current_view, set_view }) => {
           is_active={current_view === 'payments'}
           onClick={() => set_view('payments')}
         />
+        {current_user && current_user.role === UserRole.ADMIN && (
+            <div className="pt-2 mt-2 border-t border-slate-700">
+                <NavItem
+                    icon={<Icon name="shield" />}
+                    label="Admin Panel"
+                    is_active={current_view === 'admin'}
+                    onClick={() => set_view('admin')}
+                />
+            </div>
+        )}
       </nav>
       {current_user && (
           <div className="p-4 border-t border-slate-700">
@@ -75,7 +87,7 @@ const Sidebar: React.FC<SidebarProps> = ({ current_view, set_view }) => {
               <img src={current_user.avatar_url} alt={current_user.name} className="w-8 h-8 rounded-full mr-3" />
               <div className="flex-1">
                 <p className="font-semibold text-slate-100">{current_user.name}</p>
-                <p className="text-xs">Case Manager</p>
+                <p className="text-xs capitalize">{current_user.role}</p>
               </div>
               <Icon name="settings" className="w-5 h-5" />
             </div>

@@ -5,7 +5,7 @@ export type Session = SupabaseSession;
 export type AuthUser = SupabaseUser;
 
 // Fix: Create full content for types.ts to define all data structures for the application.
-export type View = 'dashboard' | 'clients' | 'client-profile' | 'tasks' | 'settings' | 'payments';
+export type View = 'dashboard' | 'clients' | 'client-profile' | 'tasks' | 'settings' | 'payments' | 'admin';
 
 export enum TaskStatus {
     TO_DO = 'To Do',
@@ -38,6 +38,10 @@ export interface Payment {
     status: PaymentStatus;
 }
 
+export enum UserRole {
+    ADMIN = 'admin',
+    MANAGER = 'manager',
+}
 
 export interface User {
     id:string;
@@ -46,6 +50,7 @@ export interface User {
     avatar_url: string;
     phone?: string;
     description?: string;
+    role: UserRole;
 }
 
 // --- NEW Questionnaire Types ---

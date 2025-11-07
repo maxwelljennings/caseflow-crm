@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { use_app_context } from '../hooks/useAppContext';
 import { supabase } from '../lib/supabaseClient';
@@ -101,7 +102,7 @@ const Settings: React.FC = () => {
             </div>
           <div>
             <p className="text-2xl font-bold text-slate-100">{profile.name}</p>
-            <p className="text-slate-400">Case Manager</p>
+            <p className="text-slate-400 capitalize">{profile.role}</p>
           </div>
         </div>
         <div className="space-y-4">

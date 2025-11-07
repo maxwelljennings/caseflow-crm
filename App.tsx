@@ -12,6 +12,7 @@ import { AppProvider } from './context/AppContext';
 import LoginPage from './components/LoginPage';
 import { supabase } from './lib/supabaseClient';
 import Payments from './components/Payments';
+import AdminPanel from './components/AdminPanel';
 
 
 const App: React.FC = () => {
@@ -82,6 +83,8 @@ const MainLayout: React.FC = () => {
             return <Payments navigate_to_client={navigate_to_client} />;
         case 'settings':
             return <Settings />;
+        case 'admin':
+            return <AdminPanel />;
         default:
             return <Dashboard set_view={set_view} navigate_to_client={navigate_to_client} />;
         }
@@ -95,6 +98,7 @@ const MainLayout: React.FC = () => {
             case 'tasks': return 'Tasks';
             case 'payments': return 'Payments';
             case 'settings': return 'Settings';
+            case 'admin': return 'Admin Panel';
             default: return 'CaseFlow';
         }
     }

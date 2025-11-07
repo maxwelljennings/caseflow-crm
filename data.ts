@@ -1,5 +1,5 @@
 // Fix: Create full content for data.ts to provide mock data for the application.
-import { Client, User, Task, File, ActionLogEntry, TaskStatus, PaymentPlan, PaymentStatus, ImmigrationOffice, Notification } from './types';
+import { Client, User, Task, File, ActionLogEntry, TaskStatus, PaymentPlan, PaymentStatus, ImmigrationOffice, Notification, UserRole } from './types';
 
 export const USERS: User[] = [
     {
@@ -8,7 +8,9 @@ export const USERS: User[] = [
         username: 'pavel',
         avatar_url: 'https://i.pravatar.cc/150?u=pavel',
         phone: '+48 123 456 789',
-        description: 'Lead Case Manager specializing in temporary residence permits.'
+        description: 'Lead Case Manager specializing in temporary residence permits.',
+        // Fix: Add missing 'role' property to satisfy the User type.
+        role: UserRole.ADMIN,
     },
     {
         id: 'user-2',
@@ -16,7 +18,9 @@ export const USERS: User[] = [
         username: 'anna',
         avatar_url: 'https://i.pravatar.cc/150?u=anna',
         phone: '+48 987 654 321',
-        description: 'Case Manager with expertise in work permits and family reunification.'
+        description: 'Case Manager with expertise in work permits and family reunification.',
+        // Fix: Add missing 'role' property to satisfy the User type.
+        role: UserRole.MANAGER,
     },
 ];
 
