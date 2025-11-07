@@ -67,6 +67,12 @@ const Sidebar: React.FC<SidebarProps> = ({ current_view, set_view }) => {
           is_active={current_view === 'payments'}
           onClick={() => set_view('payments')}
         />
+        <NavItem
+          icon={<Icon name="file" />}
+          label="Doc Generator"
+          is_active={current_view === 'document-generator'}
+          onClick={() => set_view('document-generator')}
+        />
         {current_user && current_user.role === UserRole.ADMIN && (
             <div className="pt-2 mt-2 border-t border-slate-700">
                 <NavItem

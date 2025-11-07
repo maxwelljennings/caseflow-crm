@@ -1,4 +1,3 @@
-
 # CaseFlow CRM
 
 ## 1. Project Vision & Philosophy
@@ -23,9 +22,10 @@ CaseFlow has evolved from a proof-of-concept into a robust, full-stack Single-Pa
 *   **Storage**: File management is handled by Supabase Storage, which allows us to securely store and serve client documents and user avatars.
 
 ### Storage Architecture
-Our file storage is logically separated into two distinct "buckets" for security and organization:
+Our file storage is logically separated into distinct "buckets" for security and organization:
 1.  **`client-files` (Private)**: This bucket is used exclusively for confidential documents related to client cases (e.g., passport scans, contracts, applications). In the future, it will be configured with strict RLS policies so that only the assigned case manager can access a client's files.
 2.  **`avatars` (Public)**: This bucket stores public-facing images, specifically the profile pictures of the CRM users (Case Managers). Making this bucket public allows for fast and efficient loading of avatars in the UI without complex security checks.
+3.  **`document-templates` (Private)**: This new bucket holds the `.docx` template files used by the Document Generator. These are private and accessed by the application to generate filled documents.
 
 ### Frontend (React)
 *   **State Management (React Context)**: The application's state is managed through a custom `AppContext.tsx`. Instead of holding static data, this context is now responsible for:
@@ -45,6 +45,19 @@ Our file storage is logically separated into two distinct "buckets" for security
 ---
 
 ## 3. Feature Guide
+
+### Document Generator
+*   **What is it?** A powerful tool to automatically generate `.docx` documents for clients based on pre-defined templates.
+*   **Why is it important?** It dramatically reduces the time spent on repetitive paperwork, eliminates copy-paste errors, and ensures consistency across all client documentation.
+*   **How to use it (All Users):**
+    1.  Navigate to the **Doc Generator** tab in the sidebar.
+    2.  Select a template from the list on the left.
+    3.  In the "Generate Document" panel, choose a client from the dropdown menu.
+    4.  Click "Generate & Download". A `.docx` file will be downloaded, with all the template tags (e.g., `{{client.name}}`) replaced with the selected client's data.
+*   **How to use it (Admins):**
+    1.  **Add Templates**: In the "Doc Generator" view, click "Upload New Template". Provide a name, a description, and select the `.docx` file from your computer.
+    2.  **Delete Templates**: Click the trash icon next to any template in the list to permanently delete it.
+    3.  **Create Templates**: To create a new template, make a standard `.docx` file and use the placeholders listed in the **Tag Reference** tab. For example, to insert the client's passport number, simply type `{{client.details.passport_number}}` into your document.
 
 ### User Authentication
 *   **What is it?** A secure login system for Case Managers.
@@ -93,6 +106,10 @@ Our file storage is logically separated into two distinct "buckets" for security
 
 ## 4. Version History / Changelog
 
+*   **2024-08-16**:
+    *   **Feature: Document Generator**: Implemented a major new feature allowing users to generate `.docx` documents from templates populated with client data.
+    *   **Admin Template Management**: Admins can now upload and delete `.docx` templates.
+    *   **Tag Reference Guide**: Added an in-app guide detailing all available template tags.
 *   **2024-08-15**:
     *   **Avatar Uploads**: Implemented user profile avatar uploads. Users can now click their avatar on the Settings page to upload a new picture.
     *   **Storage Architecture**: Established a two-bucket strategy in Supabase Storage: a private `client-files` bucket for sensitive documents and a public `avatars` bucket for user profile pictures.

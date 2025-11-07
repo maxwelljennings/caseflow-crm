@@ -5,7 +5,7 @@ export type Session = SupabaseSession;
 export type AuthUser = SupabaseUser;
 
 // Fix: Create full content for types.ts to define all data structures for the application.
-export type View = 'dashboard' | 'clients' | 'client-profile' | 'tasks' | 'settings' | 'payments' | 'admin';
+export type View = 'dashboard' | 'clients' | 'client-profile' | 'tasks' | 'settings' | 'payments' | 'admin' | 'document-generator';
 
 export enum TaskStatus {
     TO_DO = 'To Do',
@@ -205,4 +205,16 @@ export interface Notification {
     recipient_user_id?: string;
     actor_user_id?: string;
     entity_id?: string; // e.g., action_log_id
+}
+
+// --- NEW Document Generator Types ---
+export interface DocumentTemplate {
+    id: string;
+    name: string;
+    description: string;
+    storage_path: string; // Path in Supabase storage
+    uploaded_by: string; // user id
+    created_at: string;
+    usage_count: number;
+    category: 'standard' | 'custom';
 }

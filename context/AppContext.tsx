@@ -1,8 +1,6 @@
-
-
 import React, { createContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import type { Client, User, Task, File as ClientFile, ActionLogEntry, Payment, PaymentPlan, ImmigrationOffice, Notification, Session } from '../types';
+import type { Client, User, Task, File as ClientFile, ActionLogEntry, Payment, PaymentPlan, ImmigrationOffice, Notification, Session, DocumentTemplate } from '../types';
 import { TaskStatus, UserRole } from '../types';
 
 interface AppState {
@@ -17,6 +15,7 @@ interface AppState {
     files: ClientFile[];
     action_logs: ActionLogEntry[];
     payments: Payment[];
+    document_templates: DocumentTemplate[];
 }
 
 export interface AppContextType {
@@ -39,6 +38,9 @@ export interface AppContextType {
     sign_out: () => Promise<void>;
     update_user_avatar: (file: File) => Promise<void>;
     update_user_role: (user_id: string, role: UserRole) => Promise<void>;
+    upload_document_template: (payload: { file: File; name: string; description: string; }) => Promise<void>;
+    delete_document_template: (template_id: string) => Promise<void>;
+    increment_template_usage_count: (template_id: string) => Promise<void>;
 }
 
 
@@ -63,11 +65,10 @@ const format_file_size = (bytes: number, decimals = 2): string => {
 // This is the Adapter Pattern to resolve the mismatch between
 // the flat DB schema and the nested frontend Client type.
 
-const transform_flat_to_nested = (client: any): Client => {
+const transform_flat_to_nested = (client: any): Omit<Client, 'assignee_ids'> => {
     return {
         id: client.id,
         name: client.name,
-        assignee_ids: client.assignee_ids || [],
         last_activity_date: client.last_activity_date,
         payment_plan: client.payment_plan,
         questionnaire: client.questionnaire,
@@ -103,7 +104,8 @@ const transform_nested_to_flat = (client: Partial<Client>) => {
         is_transferring: client.immigration_case?.is_transferring,
         transfer_office_id: client.immigration_case?.transfer_office_id,
     };
-    // Remove the nested objects as they don't exist in the DB table
+    // Remove properties that will be handled by their own tables or are frontend-only
+    delete flat_client.assignee_ids;
     delete flat_client.contact;
     delete flat_client.details;
     delete flat_client.immigration_case;
@@ -124,6 +126,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
     const [files, set_files] = useState<ClientFile[]>([]);
     const [action_logs, set_action_logs] = useState<ActionLogEntry[]>([]);
     const [payments, set_payments] = useState<Payment[]>([]);
+    const [document_templates, set_document_templates] = useState<DocumentTemplate[]>([]);
     const [loading, set_loading] = useState(true);
     const [current_user, set_current_user] = useState<User | null>(null);
 
@@ -177,15 +180,18 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
                 try {
                     const [
                         { data: clients_data, error: clients_error },
+                        { data: assignees_data, error: assignees_error },
                         { data: users_data, error: users_error },
                         { data: tasks_data, error: tasks_error },
                         { data: offices_data, error: offices_error },
                         { data: notifications_data, error: notifications_error },
                         { data: files_data, error: files_error },
                         { data: logs_data, error: logs_error },
-                        { data: payments_data, error: payments_error }
+                        { data: payments_data, error: payments_error },
+                        { data: templates_data, error: templates_error }
                     ] = await Promise.all([
                         supabase.from('clients').select('*'),
+                        supabase.from('client_assignees').select('*'),
                         supabase.from('profiles').select('*'),
                         supabase.from('tasks').select('*'),
                         supabase.from('immigration_offices').select('*'),
@@ -193,19 +199,36 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
                         supabase.from('files').select('*'),
                         supabase.from('action_log').select('*'),
                         supabase.from('payments').select('*'),
+                        supabase.from('document_templates').select('*'),
                     ]);
 
-                    if (clients_error) throw clients_error;
-                    if (users_error) throw users_error;
-                    if (tasks_error) throw tasks_error;
-                    if (offices_error) throw offices_error;
-                    if (notifications_error) throw notifications_error;
-                    if (files_error) throw files_error;
-                    if (logs_error) throw logs_error;
-                    if (payments_error) throw payments_error;
+                    if (clients_error) throw new Error(`Failed to fetch clients: ${clients_error.message}`);
+                    if (assignees_error) throw new Error(`Failed to fetch client assignees: ${assignees_error.message}`);
+                    if (users_error) throw new Error(`Failed to fetch users: ${users_error.message}`);
+                    if (tasks_error) throw new Error(`Failed to fetch tasks: ${tasks_error.message}`);
+                    if (offices_error) throw new Error(`Failed to fetch immigration offices: ${offices_error.message}`);
+                    if (notifications_error) throw new Error(`Failed to fetch notifications: ${notifications_error.message}`);
+                    if (files_error) throw new Error(`Failed to fetch files: ${files_error.message}`);
+                    if (logs_error) throw new Error(`Failed to fetch action logs: ${logs_error.message}`);
+                    if (payments_error) throw new Error(`Failed to fetch payments: ${payments_error.message}`);
+                    if (templates_error) throw new Error(`Failed to fetch document templates: ${templates_error.message}`);
                     
-                    // Transform flat client data to nested structure
-                    set_clients(clients_data.map(transform_flat_to_nested));
+                    // Group assignees by client ID for efficient lookup
+                    const assignees_map = assignees_data.reduce<Record<string, string[]>>((acc, item) => {
+                        if (!acc[item.client_id]) {
+                            acc[item.client_id] = [];
+                        }
+                        acc[item.client_id].push(item.user_id);
+                        return acc;
+                    }, {});
+
+                    // Combine flat client data with assignees
+                    const clients_with_assignees = clients_data.map(c => ({
+                        ...transform_flat_to_nested(c),
+                        assignee_ids: assignees_map[c.id] || []
+                    }));
+
+                    set_clients(clients_with_assignees);
                     set_users(users_data.map(process_user_with_default_avatar));
                     set_tasks(tasks_data);
                     set_immigration_offices(offices_data);
@@ -213,9 +236,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
                     set_files(files_data as ClientFile[]);
                     set_action_logs(logs_data as ActionLogEntry[]);
                     set_payments(payments_data);
+                    set_document_templates(templates_data);
 
                 } catch (error) {
-                    console.error("Error fetching data:", error);
+                    console.error("Error fetching application data:", error);
                 } finally {
                     set_loading(false);
                 }
@@ -230,6 +254,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
             set_files([]);
             set_action_logs([]);
             set_payments([]);
+            set_document_templates([]);
             set_loading(false);
             set_current_user(null);
         }
@@ -242,7 +267,20 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
             console.error('Error adding client:', error);
             alert(`Error adding client: ${error.message}`);
         } else if (data) {
-            set_clients(prev => [...prev, transform_flat_to_nested(data)]);
+            const new_client_id = data.id;
+            const initial_assignee_id = client_data.assignee_ids[0];
+            if (initial_assignee_id) {
+                const { error: assignee_error } = await supabase.from('client_assignees').insert({ client_id: new_client_id, user_id: initial_assignee_id });
+                if (assignee_error) {
+                    console.error('Error setting initial assignee:', assignee_error);
+                    // Optionally, delete the client if assignee assignment fails
+                    await supabase.from('clients').delete().eq('id', new_client_id);
+                    alert('Could not assign user to the new client. Client creation failed.');
+                    return;
+                }
+            }
+            const new_client_obj: Client = { ...transform_flat_to_nested(data), assignee_ids: client_data.assignee_ids };
+            set_clients(prev => [...prev, new_client_obj]);
         }
     };
 
@@ -254,11 +292,28 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
             alert(`Error updating client: ${error.message}`);
         }
         else if (data) {
-             set_clients(prev => prev.map(c => c.id === data.id ? transform_flat_to_nested(data) : c));
+            const existing_client = clients.find(c => c.id === client.id);
+            const existing_assignees = existing_client?.assignee_ids || [];
+            const new_assignees = client.assignee_ids;
+
+            const to_add = new_assignees.filter(id => !existing_assignees.includes(id));
+            const to_remove = existing_assignees.filter(id => !new_assignees.includes(id));
+
+            if (to_remove.length > 0) {
+                const { error: delete_error } = await supabase.from('client_assignees').delete().eq('client_id', client.id).in('user_id', to_remove);
+                if (delete_error) console.error("Error removing assignees:", delete_error);
+            }
+            if (to_add.length > 0) {
+                const { error: add_error } = await supabase.from('client_assignees').insert(to_add.map(user_id => ({ client_id: client.id, user_id })));
+                 if (add_error) console.error("Error adding assignees:", add_error);
+            }
+             
+            set_clients(prev => prev.map(c => c.id === data.id ? { ...transform_flat_to_nested(data), assignee_ids: new_assignees } : c));
         }
     };
 
     const delete_client = async (client_id: string) => {
+        // RLS with ON DELETE CASCADE will handle deleting from client_assignees
         const { error } = await supabase.from('clients').delete().eq('id', client_id);
         if (error) {
             console.error('Error deleting client:', error);
@@ -670,9 +725,84 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
             set_users(prev => prev.map(u => u.id === user_id ? process_user_with_default_avatar(data as User) : u));
         }
     };
+
+    const upload_document_template = async (payload: { file: File; name: string; description: string; }) => {
+        if (!current_user) {
+            alert('You must be logged in.');
+            return;
+        }
+        const { file, name, description } = payload;
+        const file_path = `public/${crypto.randomUUID()}-${file.name}`;
+        
+        try {
+            const { error: upload_error } = await supabase.storage.from('document-templates').upload(file_path, file);
+            if (upload_error) throw upload_error;
+
+            const template_to_insert = {
+                name,
+                description,
+                storage_path: file_path,
+                uploaded_by: current_user.id,
+                // category will default to 'custom' in the DB
+            };
+
+            const { data, error: insert_error } = await supabase.from('document_templates').insert(template_to_insert).select().single();
+            if (insert_error) {
+                // If DB insert fails, try to remove the orphaned file from storage
+                await supabase.storage.from('document-templates').remove([file_path]);
+                throw insert_error;
+            }
+
+            set_document_templates(prev => [...prev, data]);
+        } catch (error: any) {
+            console.error("Error uploading document template:", error);
+            alert(`Failed to upload template: ${error.message}`);
+        }
+    };
+
+    const delete_document_template = async (template_id: string) => {
+        const template_to_delete = document_templates.find(t => t.id === template_id);
+        if (!template_to_delete) {
+            alert('Template not found.');
+            return;
+        }
+
+        try {
+            // First, remove from storage
+            const { error: storage_error } = await supabase.storage.from('document-templates').remove([template_to_delete.storage_path]);
+            if (storage_error) {
+                // Log error but proceed to delete DB record, as it might be an orphaned entry
+                console.error("Could not delete file from storage:", storage_error.message);
+            }
+
+            // Then, remove from database
+            const { error: db_error } = await supabase.from('document_templates').delete().eq('id', template_id);
+            if (db_error) throw db_error;
+
+            set_document_templates(prev => prev.filter(t => t.id !== template_id));
+        } catch (error: any) {
+            console.error("Error deleting document template:", error);
+            alert(`Failed to delete template: ${error.message}`);
+        }
+    };
     
+    const increment_template_usage_count = async (template_id: string) => {
+        const { error } = await supabase.rpc('increment_template_usage', { template_id_to_inc: template_id });
+        if (error) {
+            console.error("Error incrementing template usage:", error);
+        } else {
+            // Optimistically update local state for immediate UI feedback
+            set_document_templates(prev => prev.map(t => 
+                t.id === template_id ? { ...t, usage_count: t.usage_count + 1 } : t
+            ));
+        }
+    };
+
+    // Fix: Correctly structure the useMemo hook by closing the factory function before the dependency array.
+    // The previous syntax `() => ({...}, [...])` was interpreted as a single function returning the dependency array
+    // due to the comma operator, causing the "left side of comma operator is unused" error.
     const context_value = useMemo(() => ({
-        state: { clients, users, tasks, immigration_offices, notifications, loading, current_user, session, files, action_logs, payments },
+        state: { clients, users, tasks, immigration_offices, notifications, loading, current_user, session, files, action_logs, payments, document_templates },
         add_client,
         update_client,
         delete_client,
@@ -691,7 +821,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
         sign_out,
         update_user_avatar,
         update_user_role,
-    }), [clients, users, tasks, immigration_offices, notifications, loading, current_user, session, files, action_logs, payments]);
+        upload_document_template,
+        delete_document_template,
+        increment_template_usage_count,
+    }), [clients, users, tasks, immigration_offices, notifications, loading, current_user, session, files, action_logs, payments, document_templates]);
 
     return (
         <AppContext.Provider value={context_value}>

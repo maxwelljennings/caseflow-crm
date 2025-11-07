@@ -13,6 +13,7 @@ import LoginPage from './components/LoginPage';
 import { supabase } from './lib/supabaseClient';
 import Payments from './components/Payments';
 import AdminPanel from './components/AdminPanel';
+import DocumentGenerator from './components/DocumentGenerator';
 
 
 const App: React.FC = () => {
@@ -81,6 +82,8 @@ const MainLayout: React.FC = () => {
             return <Tasks navigate_to_client={navigate_to_client} />;
         case 'payments':
             return <Payments navigate_to_client={navigate_to_client} />;
+        case 'document-generator':
+            return <DocumentGenerator />;
         case 'settings':
             return <Settings />;
         case 'admin':
@@ -97,6 +100,7 @@ const MainLayout: React.FC = () => {
             case 'client-profile': return 'Client Profile';
             case 'tasks': return 'Tasks';
             case 'payments': return 'Payments';
+            case 'document-generator': return 'Document Generator';
             case 'settings': return 'Settings';
             case 'admin': return 'Admin Panel';
             default: return 'CaseFlow';
