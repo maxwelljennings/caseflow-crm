@@ -1,7 +1,5 @@
 
 
-
-
 import React, { createContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import type { Client, User, Task, File as ClientFile, ActionLogEntry, Payment, PaymentPlan, ImmigrationOffice, Notification, Session } from '../types';
@@ -129,6 +127,32 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
     const [loading, set_loading] = useState(true);
     const [current_user, set_current_user] = useState<User | null>(null);
 
+    // Helper to generate initials from a name
+    const get_initials = (name: string): string => {
+        if (!name) return '?';
+        const words = name.trim().split(/\s+/).filter(Boolean);
+        if (words.length === 0) return '?';
+        if (words.length === 1) {
+            return words[0].charAt(0).toUpperCase();
+        }
+        // For more than one word, take the first letter of the first and last words.
+        return (words[0].charAt(0) + words[words.length - 1].charAt(0)).toUpperCase();
+    };
+
+    // Helper to provide a fallback avatar for users without one
+    const process_user_with_default_avatar = (user: User): User => {
+        if (user && !user.avatar_url) {
+            const initials = get_initials(user.name);
+            return {
+                ...user,
+                // Using a service that generates avatars from initials for a professional and consistent look.
+                avatar_url: `https://ui-avatars.com/api/?name=${encodeURIComponent(initials)}&background=0ea5e9&color=fff&rounded=true&bold=true&length=${initials.length}`
+            };
+        }
+        return user;
+    };
+
+
     // This effect now ONLY depends on the user's ID.
     useEffect(() => {
         const user_id = session?.user?.id;
@@ -139,8 +163,11 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
                 .select('*')
                 .eq('id', id)
                 .single();
-            if (error) console.error('Error fetching user profile:', error);
-            else set_current_user(profile);
+            if (error) {
+                console.error('Error fetching user profile:', error);
+            } else if (profile) {
+                set_current_user(process_user_with_default_avatar(profile));
+            }
         };
 
         if (user_id) {
@@ -179,7 +206,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
                     
                     // Transform flat client data to nested structure
                     set_clients(clients_data.map(transform_flat_to_nested));
-                    set_users(users_data);
+                    set_users(users_data.map(process_user_with_default_avatar));
                     set_tasks(tasks_data);
                     set_immigration_offices(offices_data);
                     set_notifications(notifications_data);
@@ -640,7 +667,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, session }) =
             console.error("Error updating user role:", error);
             alert(`Failed to update role: ${error.message}`);
         } else if (data) {
-            set_users(prev => prev.map(u => u.id === user_id ? (data as User) : u));
+            set_users(prev => prev.map(u => u.id === user_id ? process_user_with_default_avatar(data as User) : u));
         }
     };
     
