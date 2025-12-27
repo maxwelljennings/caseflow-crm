@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { use_app_context } from '../hooks/useAppContext';
 import type { Client } from '../types';
@@ -66,6 +67,16 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose }) => {
                 nationality: new_client.nationality,
                 passport_number: new_client.passport_number,
             },
+            // Fix: Pre-fill questionnaire personal data with separate names to avoid splitting errors later
+            questionnaire: {
+                personal_data: {
+                    name: new_client.first_name.trim(),
+                    surname: new_client.last_name.trim(),
+                    email: new_client.email,
+                    telephone_number: new_client.phone,
+                    nationality: new_client.nationality,
+                }
+            }
         };
 
         await add_client(client_to_add as Omit<Client, 'id'>);

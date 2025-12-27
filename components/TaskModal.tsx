@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { use_app_context } from '../hooks/useAppContext';
 import { Task, TaskStatus } from '../types';
@@ -14,15 +15,16 @@ interface TaskModalProps {
 // A simple, reusable two-click date picker component
 const DatePicker: React.FC<{ selected: string, onChange: (date: string) => void }> = ({ selected, onChange }) => {
     const [is_open, set_is_open] = useState(false);
-    const [current_month, set_current_month] = useState(selected ? new Date(selected) : new Date());
+    
+    // Parse the selected string "YYYY-MM-DD" into a local Date object.
+    // We avoid new Date(string) because it assumes UTC, which causes shifts when converting to local components.
+    const getLocalDateFromString = (dateString: string) => {
+        if (!dateString) return new Date();
+        const [year, month, day] = dateString.split('-').map(Number);
+        return new Date(year, month - 1, day);
+    };
 
-    const selected_date = selected ? new Date(selected) : null;
-     if (selected_date) {
-        const timezone_offset = selected_date.getTimezoneOffset() * 60000;
-        const corrected_date = new Date(selected_date.getTime() + timezone_offset);
-        selected_date.setFullYear(corrected_date.getFullYear(), corrected_date.getMonth(), corrected_date.getDate());
-    }
-
+    const [current_month, set_current_month] = useState(() => getLocalDateFromString(selected));
 
     const days_in_month = () => new Date(current_month.getFullYear(), current_month.getMonth() + 1, 0).getDate();
     const start_day_of_month = () => new Date(current_month.getFullYear(), current_month.getMonth(), 1).getDay();
@@ -31,6 +33,7 @@ const DatePicker: React.FC<{ selected: string, onChange: (date: string) => void 
         const days = [];
         const month_days = days_in_month();
         const first_day = start_day_of_month();
+        const selected_date_obj = selected ? getLocalDateFromString(selected) : null;
 
         for (let i = 0; i < first_day; i++) {
             days.push(<div key={`empty-${i}`} className="w-8 h-8"></div>);
@@ -38,12 +41,21 @@ const DatePicker: React.FC<{ selected: string, onChange: (date: string) => void 
 
         for (let day = 1; day <= month_days; day++) {
             const date = new Date(current_month.getFullYear(), current_month.getMonth(), day);
-            const is_selected = selected_date && date.toDateString() === selected_date.toDateString();
+            
+            const is_selected = selected_date_obj && 
+                date.getFullYear() === selected_date_obj.getFullYear() &&
+                date.getMonth() === selected_date_obj.getMonth() &&
+                date.getDate() === selected_date_obj.getDate();
+
             days.push(
                 <div 
                     key={day}
                     onClick={() => {
-                        onChange(date.toISOString().split('T')[0]);
+                        // Create the string manually to ensure it matches the clicked local date
+                        const y = date.getFullYear();
+                        const m = String(date.getMonth() + 1).padStart(2, '0');
+                        const d = String(date.getDate()).padStart(2, '0');
+                        onChange(`${y}-${m}-${d}`);
                         set_is_open(false);
                     }}
                     className={`w-8 h-8 flex items-center justify-center rounded-full cursor-pointer text-slate-100 ${
@@ -83,6 +95,10 @@ const DatePicker: React.FC<{ selected: string, onChange: (date: string) => void 
                         {render_days()}
                      </div>
                  </div>
+            )}
+            {/* Overlay to close picker when clicking outside */}
+            {is_open && (
+                <div className="fixed inset-0 z-0" onClick={() => set_is_open(false)}></div>
             )}
         </div>
     );
@@ -147,7 +163,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, task, client_id 
             onClick={onClose}
         >
             <div 
-                className="bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-lg border border-slate-700"
+                className="bg-slate-800 rounded-lg shadow-xl p-8 w-full max-w-lg border border-slate-700 relative z-10"
                 onClick={e => e.stopPropagation()}
             >
                 <h2 className="text-2xl font-bold text-slate-100 mb-6">{task ? 'Edit Task' : 'Add New Task'}</h2>

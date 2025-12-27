@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { use_app_context } from '../hooks/useAppContext';
 import AddClientModal from './AddClientModal';
@@ -18,7 +19,7 @@ const Clients: React.FC<ClientsProps> = ({ navigate_to_client }) => {
   const filter_ref = useRef<HTMLDivElement>(null);
   const [assignee_search, set_assignee_search] = useState('');
   
-  type Sort_Key = 'name' | 'case_number' | 'assignee' | 'last_activity_date';
+  type Sort_Key = 'name' | 'case_number' | 'office' | 'assignee' | 'last_activity_date';
   const [sort_key, set_sort_key] = useState<Sort_Key>('last_activity_date');
   const [sort_direction, set_sort_direction] = useState<'asc' | 'desc'>('desc');
 
@@ -74,6 +75,11 @@ const Clients: React.FC<ClientsProps> = ({ navigate_to_client }) => {
             case 'case_number':
                 result = (a.immigration_case.case_number || '').localeCompare(b.immigration_case.case_number || '');
                 break;
+            case 'office':
+                const office_a = immigration_offices.find(o => o.id === a.immigration_case.office_id)?.name || '';
+                const office_b = immigration_offices.find(o => o.id === b.immigration_case.office_id)?.name || '';
+                result = office_a.localeCompare(office_b);
+                break;
             case 'assignee':
                 const first_assignee_a = users.find(u => u.id === a.assignee_ids[0])?.name || '';
                 const first_assignee_b = users.find(u => u.id === b.assignee_ids[0])?.name || '';
@@ -88,7 +94,7 @@ const Clients: React.FC<ClientsProps> = ({ navigate_to_client }) => {
         return sort_direction === 'asc' ? result : -result;
     });
     return sortable_clients;
-  }, [filtered_clients, sort_key, sort_direction, users]);
+  }, [filtered_clients, sort_key, sort_direction, users, immigration_offices]);
   
   const handle_sort = (key: Sort_Key) => {
     if (sort_key === key) {
@@ -200,6 +206,7 @@ const Clients: React.FC<ClientsProps> = ({ navigate_to_client }) => {
             <tr>
               <SortableHeader label="Client Name" sort_key="name" />
               <SortableHeader label="Case Number" sort_key="case_number" />
+              <SortableHeader label="Office" sort_key="office" />
               <SortableHeader label="Assignee" sort_key="assignee" />
               <SortableHeader label="Last Activity" sort_key="last_activity_date" />
             </tr>
@@ -207,6 +214,8 @@ const Clients: React.FC<ClientsProps> = ({ navigate_to_client }) => {
           <tbody>
             {sorted_clients.map(client => {
               const assignees = users.filter(u => client.assignee_ids.includes(u.id));
+              const office = immigration_offices.find(o => o.id === client.immigration_case.office_id);
+              
               return (
                 <tr
                   key={client.id}
@@ -215,6 +224,7 @@ const Clients: React.FC<ClientsProps> = ({ navigate_to_client }) => {
                 >
                   <td className="px-6 py-4 font-medium text-slate-100 whitespace-nowrap">{client.name}</td>
                   <td className="px-6 py-4">{client.immigration_case.case_number}</td>
+                  <td className="px-6 py-4 truncate max-w-[200px]" title={office?.name}>{office?.name || 'N/A'}</td>
                   <td className="px-6 py-4">
                     <div className="flex items-center -space-x-2">
                         {assignees.slice(0, 3).map(assignee => (
